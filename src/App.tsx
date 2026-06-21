@@ -11,7 +11,7 @@ import {
 } from "./lib/documentModel";
 import { extractOutline, renderMarkdown } from "./lib/markdown";
 import { findAll, replaceAll } from "./lib/search";
-import { buildLineOffsetMap, findPreviewScrollTop, findTextareaScrollTop } from "./lib/scrollSync";
+import { findPreviewScrollTop, findTextareaScrollTop } from "./lib/scrollSync";
 import { getPlainMarkApi } from "./platform/plainmarkApi";
 import "katex/dist/katex.min.css";
 import "./styles.css";
@@ -76,22 +76,15 @@ export default function App() {
         return;
       }
 
-      const lineOffsets = buildLineOffsetMap(preview);
-      if (lineOffsets.size === 0) {
-        isSyncingRef.current = false;
-        return;
-      }
-
       const targetScroll = findPreviewScrollTop(
         textarea.scrollTop,
         textarea.scrollHeight,
         textarea.clientHeight,
-        lineOffsets,
         preview.scrollHeight,
         preview.clientHeight
       );
       preview.scrollTop = targetScroll;
-      isSyncingRef.current = false;
+      setTimeout(() => { isSyncingRef.current = false; }, 50);
     });
   }, [viewMode]);
 
@@ -107,22 +100,15 @@ export default function App() {
         return;
       }
 
-      const lineOffsets = buildLineOffsetMap(preview);
-      if (lineOffsets.size === 0) {
-        isSyncingRef.current = false;
-        return;
-      }
-
       const targetScroll = findTextareaScrollTop(
         preview.scrollTop,
         preview.scrollHeight,
         preview.clientHeight,
-        lineOffsets,
         textarea.scrollHeight,
         textarea.clientHeight
       );
       textarea.scrollTop = targetScroll;
-      isSyncingRef.current = false;
+      setTimeout(() => { isSyncingRef.current = false; }, 50);
     });
   }, [viewMode]);
 
