@@ -8,7 +8,12 @@ export function createBrowserPreviewApi(): PlainMarkApi {
     saveMarkdown: async () => null,
     onExternalFileOpen: () => noopUnsubscribe,
     onMenuOpen: () => noopUnsubscribe,
-    onMenuSave: () => noopUnsubscribe
+    onMenuSave: () => noopUnsubscribe,
+    setTheme: async () => undefined,
+    getTheme: async () => "light",
+    onMenuToggleDark: () => noopUnsubscribe,
+    onMenuFind: () => noopUnsubscribe,
+    onMenuReplace: () => noopUnsubscribe
   };
 }
 

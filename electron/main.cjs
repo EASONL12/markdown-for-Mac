@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } = require("electron");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
@@ -59,12 +59,34 @@ function createMenu() {
         { role: "cut" },
         { role: "copy" },
         { role: "paste" },
-        { role: "selectAll" }
+        { role: "selectAll" },
+        { type: "separator" },
+        {
+          label: "Find...",
+          accelerator: "CmdOrCtrl+F",
+          click: () => mainWindow?.webContents.send("menu:find")
+        },
+        {
+          label: "Replace...",
+          accelerator: "CmdOrCtrl+H",
+          click: () => mainWindow?.webContents.send("menu:replace")
+        }
       ]
     },
     {
       label: "View",
-      submenu: [{ role: "reload" }, { role: "toggleDevTools" }, { type: "separator" }, { role: "togglefullscreen" }]
+      submenu: [
+        { role: "reload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+        { type: "separator" },
+        {
+          label: "Toggle Dark Mode",
+          accelerator: "CmdOrCtrl+Shift+D",
+          click: () => mainWindow?.webContents.send("menu:toggle-dark")
+        }
+      ]
     }
   ];
 
@@ -72,13 +94,14 @@ function createMenu() {
 }
 
 async function createWindow() {
+  const bgColor = nativeTheme.shouldUseDarkColors ? "#1a1e1c" : "#f4f6f5";
   mainWindow = new BrowserWindow({
     width: 1120,
     height: 720,
     minWidth: 860,
     minHeight: 620,
     titleBarStyle: "hiddenInset",
-    backgroundColor: "#f4f6f5",
+    backgroundColor: bgColor,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -147,6 +170,20 @@ ipcMain.handle("markdown:open", async () => {
   }
 
   return Promise.all(result.filePaths.map((filePath) => readMarkdownFile(filePath)));
+});
+
+ipcMain.handle("theme:set", async (_event, mode) => {
+  if (mode === "system") {
+    nativeTheme.themeSource = "system";
+  } else if (mode === "dark") {
+    nativeTheme.themeSource = "dark";
+  } else {
+    nativeTheme.themeSource = "light";
+  }
+});
+
+ipcMain.handle("theme:get", () => {
+  return nativeTheme.shouldUseDarkColors ? "dark" : "light";
 });
 
 ipcMain.handle("markdown:save", async (_event, file) => {

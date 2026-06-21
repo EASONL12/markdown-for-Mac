@@ -5,9 +5,10 @@ describe("renderMarkdown", () => {
   it("renders headings, emphasis, lists, and code blocks", () => {
     const html = renderMarkdown("# Notes\n\n- **Write** first\n\n```js\nconsole.log('ok')\n```");
 
-    expect(html).toContain('<h1 id="notes">Notes</h1>');
+    expect(html).toContain('id="notes"');
+    expect(html).toContain("Notes</h1>");
     expect(html).toContain("<strong>Write</strong>");
-    expect(html).toContain("<ul>");
+    expect(html).toContain("<ul");
     expect(html).toContain("language-js");
   });
 
@@ -40,9 +41,12 @@ describe("renderMarkdown", () => {
   it("renders headings with stable ids for outline navigation", () => {
     const html = renderMarkdown("# Same\n\n## Same\n\n# 中文标题");
 
-    expect(html).toContain('<h1 id="same">Same</h1>');
-    expect(html).toContain('<h2 id="same-2">Same</h2>');
-    expect(html).toContain('<h1 id="中文标题">中文标题</h1>');
+    expect(html).toContain('id="same"');
+    expect(html).toContain("Same</h1>");
+    expect(html).toContain('id="same-2"');
+    expect(html).toContain("Same</h2>");
+    expect(html).toContain('id="中文标题"');
+    expect(html).toContain("中文标题</h1>");
   });
 
   it("renders inline LaTeX formulas with KaTeX", () => {

@@ -218,5 +218,12 @@ export function renderMarkdown(source: string): string {
   const env = {};
   const tokens = markdown.parse(source, env);
   addHeadingIds(tokens);
+
+  for (const token of tokens) {
+    if (token.map && token.level === 0) {
+      token.attrSet("data-source-line", String(token.map[0]));
+    }
+  }
+
   return markdown.renderer.render(tokens, markdown.options, env);
 }

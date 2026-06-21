@@ -14,6 +14,11 @@ export interface PlainMarkApi {
   onExternalFileOpen(callback: (file: OpenedMarkdownFile) => void): () => void;
   onMenuOpen(callback: () => void): () => void;
   onMenuSave(callback: () => void): () => void;
+  setTheme(mode: "light" | "dark" | "system"): Promise<void>;
+  getTheme(): Promise<"light" | "dark">;
+  onMenuToggleDark(callback: () => void): () => void;
+  onMenuFind(callback: () => void): () => void;
+  onMenuReplace(callback: () => void): () => void;
 }
 
 declare global {
