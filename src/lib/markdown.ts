@@ -87,9 +87,14 @@ function addHeadingIds(tokens: Token[]): void {
   }
 }
 
-function renderMath(source: string, displayMode: boolean): string {
+function normalizeMathSource(source: string): string {
   let unescaped = source.replace(/\\\\/g, "\\");
-  unescaped = unescaped.replace(/\\([{}_^])/g, "$1");
+  unescaped = unescaped.replace(/\\([{}_^.=+\-()])/g, "$1");
+  return unescaped;
+}
+
+function renderMath(source: string, displayMode: boolean): string {
+  const unescaped = normalizeMathSource(source);
   return katex.renderToString(unescaped, {
     displayMode,
     output: "html",
@@ -112,19 +117,24 @@ function inlineMathRule(state: StateInline, silent: boolean): boolean {
   const src = state.src;
   const pos = state.pos;
 
-  // Support $begin:math:inline$...$end:math:inline$
-  if (src.slice(pos, pos + 18) === "$begin:math:inline$") {
-    const endMarker = "$end:math:inline$";
-    const endPos = src.indexOf(endMarker, pos + 18);
+  // Support $begin:math:inline$...$end:math:inline$ and $begin:math:text$...$end:math:text$
+  for (const marker of ["inline", "text"]) {
+    const beginMarker = `$begin:math:${marker}$`;
+    if (src.slice(pos, pos + beginMarker.length) !== beginMarker) {
+      continue;
+    }
+
+    const endMarker = `$end:math:${marker}$`;
+    const endPos = src.indexOf(endMarker, pos + beginMarker.length);
     if (endPos === -1) return false;
 
-    const content = src.slice(pos + 18, endPos).trim();
+    const content = src.slice(pos + beginMarker.length, endPos).trim();
     if (!content) return false;
 
     if (!silent) {
       const token = state.push("math_inline", "math", 0);
       token.content = content;
-      token.markup = "$begin:math:inline$";
+      token.markup = beginMarker;
     }
     state.pos = endPos + endMarker.length;
     return true;

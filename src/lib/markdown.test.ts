@@ -80,10 +80,67 @@ describe("renderMarkdown", () => {
     expect(html).toContain("E");
   });
 
+  it("renders $begin:math:text$...$end:math:text$ syntax as inline math", () => {
+    const html = renderMarkdown("| 符号 | 含义 |\n|---|---|\n| $begin:math:text$f\\_\\{clk\\}$end:math:text$ | 时钟频率 |");
+
+    expect(html).toContain("katex");
+    expect(html).not.toContain("$begin:math:text$");
+    expect(html).toContain("msupsub");
+  });
+
   it("renders $begin:math:display$...$end:math:display$ syntax", () => {
     const html = renderMarkdown("$begin:math:display$\nS = \\frac{T_{before}}{T_{after}}\n$end:math:display$");
 
     expect(html).toContain("katex-display");
     expect(html).toContain("S");
+  });
+
+  it("renders escaped decimal and minus characters in math display blocks", () => {
+    const html = renderMarkdown(`$begin:math:display$
+CPI\\=0\\.5+0\\.4+0\\.3+0\\.4\\=1\\.6
+$end:math:display$
+
+$begin:math:display$
+S\\_\\{max\\}
+\\=
+\\\\frac1\\{1\\-0\\.6\\}
+\\= 2\\.5
+$end:math:display$`);
+
+    expect(html).toContain("katex-display");
+    expect(html).not.toContain("katex-error");
+    expect(html).toContain("1.6");
+    expect(html).toContain("2.5");
+    expect(html).toContain("msupsub");
+  });
+
+  it("renders escaped parentheses in math display blocks", () => {
+    const html = renderMarkdown(`$begin:math:display$
+CPI
+\\=
+\\\\sum
+\\\\left\\(
+\\\\frac\\{IC\\_i\\}\\{IC\\}
+\\\\times
+CPI\\_i
+\\\\right\\)
+$end:math:display$
+
+$begin:math:display$
+S
+\\=
+\\\\frac1
+\\{
+\\(1\\-f\\)
+\\+
+\\\\frac fP
+\\}
+$end:math:display$`);
+
+    expect(html).toContain("katex-display");
+    expect(html).not.toContain("katex-error");
+    expect(html).toContain("∑");
+    expect(html).toContain("×");
+    expect(html).toContain("mfrac");
   });
 });
