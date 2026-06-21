@@ -107,16 +107,38 @@ function findClosingInlineDollar(source: string, start: number): number {
 }
 
 function inlineMathRule(state: StateInline, silent: boolean): boolean {
-  if (state.src[state.pos] !== "$" || state.src[state.pos + 1] === "$") {
+  const src = state.src;
+  const pos = state.pos;
+
+  // Support $begin:math:inline$...$end:math:inline$
+  if (src.slice(pos, pos + 18) === "$begin:math:inline$") {
+    const endMarker = "$end:math:inline$";
+    const endPos = src.indexOf(endMarker, pos + 18);
+    if (endPos === -1) return false;
+
+    const content = src.slice(pos + 18, endPos).trim();
+    if (!content) return false;
+
+    if (!silent) {
+      const token = state.push("math_inline", "math", 0);
+      token.content = content;
+      token.markup = "$begin:math:inline$";
+    }
+    state.pos = endPos + endMarker.length;
+    return true;
+  }
+
+  // Standard $...$ syntax
+  if (src[pos] !== "$" || src[pos + 1] === "$") {
     return false;
   }
 
-  const end = findClosingInlineDollar(state.src, state.pos + 1);
+  const end = findClosingInlineDollar(src, pos + 1);
   if (end === -1) {
     return false;
   }
 
-  const content = state.src.slice(state.pos + 1, end).trim();
+  const content = src.slice(pos + 1, end).trim();
   if (!content) {
     return false;
   }
@@ -136,6 +158,39 @@ function blockMathRule(state: StateBlock, startLine: number, endLine: number, si
   const max = state.eMarks[startLine];
   const firstLine = state.src.slice(start, max).trim();
 
+  // Support $begin:math:display$...$end:math:display$
+  if (firstLine === "$begin:math:display$") {
+    const collected: string[] = [];
+    let nextLine = startLine;
+
+    for (nextLine = startLine + 1; nextLine < endLine; nextLine += 1) {
+      const lineStart = state.bMarks[nextLine] + state.tShift[nextLine];
+      const lineEnd = state.eMarks[nextLine];
+      const line = state.src.slice(lineStart, lineEnd).trim();
+
+      if (line === "$end:math:display$") {
+        break;
+      }
+      collected.push(state.src.slice(lineStart, lineEnd));
+    }
+
+    if (nextLine >= endLine) return false;
+
+    const content = collected.join("\n").trim();
+    if (!content) return false;
+
+    if (!silent) {
+      const token = state.push("math_block", "math", 0);
+      token.block = true;
+      token.content = content;
+      token.markup = "$begin:math:display$";
+      token.map = [startLine, nextLine + 1];
+    }
+    state.line = nextLine + 1;
+    return true;
+  }
+
+  // Standard $$ syntax
   if (!firstLine.startsWith("$$")) {
     return false;
   }

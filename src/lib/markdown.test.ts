@@ -72,4 +72,18 @@ describe("renderMarkdown", () => {
     expect(html).not.toContain("katex");
     expect(html).toContain("$E = mc^2$");
   });
+
+  it("renders $begin:math:inline$...$end:math:inline$ syntax", () => {
+    const html = renderMarkdown("Energy is $begin:math:inline$E = mc^2$end:math:inline$ here.");
+
+    expect(html).toContain("katex");
+    expect(html).toContain("E");
+  });
+
+  it("renders $begin:math:display$...$end:math:display$ syntax", () => {
+    const html = renderMarkdown("$begin:math:display$\nS = \\frac{T_{before}}{T_{after}}\n$end:math:display$");
+
+    expect(html).toContain("katex-display");
+    expect(html).toContain("S");
+  });
 });
