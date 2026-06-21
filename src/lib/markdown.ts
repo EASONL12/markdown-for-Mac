@@ -88,7 +88,8 @@ function addHeadingIds(tokens: Token[]): void {
 }
 
 function renderMath(source: string, displayMode: boolean): string {
-  return katex.renderToString(source, {
+  const unescaped = source.replace(/\\\\/g, "\\");
+  return katex.renderToString(unescaped, {
     displayMode,
     output: "html",
     throwOnError: false,
