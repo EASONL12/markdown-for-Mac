@@ -11,10 +11,17 @@ contextBridge.exposeInMainWorld("plainmark", {
   saveMarkdown: (file) => ipcRenderer.invoke("markdown:save", file),
   onExternalFileOpen: (callback) => subscribe("markdown:external-open", callback),
   onMenuOpen: (callback) => subscribe("menu:open", callback),
+  onMenuNew: (callback) => subscribe("menu:new", callback),
+  onMenuClose: (callback) => subscribe("menu:close", callback),
   onMenuSave: (callback) => subscribe("menu:save", callback),
   setTheme: (mode) => ipcRenderer.invoke("theme:set", mode),
   getTheme: () => ipcRenderer.invoke("theme:get"),
   onMenuToggleDark: (callback) => subscribe("menu:toggle-dark", callback),
   onMenuFind: (callback) => subscribe("menu:find", callback),
-  onMenuReplace: (callback) => subscribe("menu:replace", callback)
+  onMenuReplace: (callback) => subscribe("menu:replace", callback),
+  watchFile: (filePath) => ipcRenderer.invoke("file:watch", filePath),
+  unwatchFile: (filePath) => ipcRenderer.invoke("file:unwatch", filePath),
+  onFileModified: (callback) => subscribe("file:modified", callback),
+  readFile: (filePath) => ipcRenderer.invoke("markdown:read", filePath),
+  getVersion: () => ipcRenderer.invoke("app:version")
 });

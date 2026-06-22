@@ -105,8 +105,14 @@ function renderMath(source: string, displayMode: boolean): string {
 
 function findClosingInlineDollar(source: string, start: number): number {
   for (let index = start; index < source.length; index += 1) {
-    if (source[index] === "$" && source[index - 1] !== "\\") {
-      return index;
+    if (source[index] === "$") {
+      let backslashCount = 0;
+      for (let j = index - 1; j >= 0 && source[j] === "\\"; j -= 1) {
+        backslashCount += 1;
+      }
+      if (backslashCount % 2 === 0) {
+        return index;
+      }
     }
   }
 
@@ -280,6 +286,20 @@ markdown.block.ruler.before("fence", "math_block", blockMathRule, {
 });
 markdown.renderer.rules.math_inline = (tokens, index): string => renderMath(tokens[index].content, false);
 markdown.renderer.rules.math_block = (tokens, index): string => `${renderMath(tokens[index].content, true)}\n`;
+
+const defaultLinkOpen = markdown.renderer.rules.link_open || function (tokens, idx, options, _env, self) {
+  return self.renderToken(tokens, idx, options);
+};
+
+markdown.renderer.rules.link_open = function (tokens, idx, options, env, self) {
+  const token = tokens[idx];
+  const href = token.attrGet("href") || "";
+  if (/^https?:\/\//.test(href)) {
+    token.attrSet("target", "_blank");
+    token.attrSet("rel", "noopener noreferrer");
+  }
+  return defaultLinkOpen(tokens, idx, options, env, self);
+};
 
 export function renderMarkdown(source: string): string {
   const env = {};

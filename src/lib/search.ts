@@ -6,12 +6,14 @@ export interface SearchOptions {
 export interface SearchResult {
   count: number;
   indices: number[];
+  matchLengths: number[];
 }
 
 export function findAll(source: string, query: string, options: SearchOptions): SearchResult {
-  if (!query) return { count: 0, indices: [] };
+  if (!query) return { count: 0, indices: [], matchLengths: [] };
 
   const indices: number[] = [];
+  const matchLengths: number[] = [];
 
   if (options.useRegex) {
     try {
@@ -20,13 +22,14 @@ export function findAll(source: string, query: string, options: SearchOptions): 
       let match;
       while ((match = regex.exec(source)) !== null) {
         indices.push(match.index);
+        matchLengths.push(match[0].length);
         if (indices.length > 10000) break;
         if (match[0].length === 0) {
           regex.lastIndex++;
         }
       }
     } catch {
-      return { count: 0, indices: [] };
+      return { count: 0, indices: [], matchLengths: [] };
     }
   } else {
     const text = options.caseSensitive ? source : source.toLowerCase();
@@ -36,12 +39,13 @@ export function findAll(source: string, query: string, options: SearchOptions): 
       const idx = text.indexOf(search, pos);
       if (idx === -1) break;
       indices.push(idx);
+      matchLengths.push(search.length);
       pos = idx + 1;
       if (indices.length > 10000) break;
     }
   }
 
-  return { count: indices.length, indices };
+  return { count: indices.length, indices, matchLengths };
 }
 
 export function replaceAll(

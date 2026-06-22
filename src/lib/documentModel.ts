@@ -137,3 +137,41 @@ export function markActiveSaved(workspace: MarkdownWorkspace, path: string): Mar
     activeDocumentId: savedDocument.id
   };
 }
+
+export function addNewDocument(workspace: MarkdownWorkspace): MarkdownWorkspace {
+  const document: MarkdownDocument = {
+    id: `new-${Date.now()}`,
+    path: null,
+    content: starterMarkdown,
+    isDirty: false
+  };
+
+  return {
+    documents: [...workspace.documents, document],
+    activeDocumentId: document.id
+  };
+}
+
+export function removeDocument(workspace: MarkdownWorkspace, documentId: string): MarkdownWorkspace {
+  const index = workspace.documents.findIndex((d) => d.id === documentId);
+  if (index === -1) return workspace;
+
+  const nextDocuments = workspace.documents.filter((d) => d.id !== documentId);
+  if (nextDocuments.length === 0) {
+    const fallback = createInitialDocument();
+    return {
+      documents: [fallback],
+      activeDocumentId: fallback.id
+    };
+  }
+
+  let nextActiveId = workspace.activeDocumentId;
+  if (nextActiveId === documentId) {
+    nextActiveId = nextDocuments[Math.min(index, nextDocuments.length - 1)].id;
+  }
+
+  return {
+    documents: nextDocuments,
+    activeDocumentId: nextActiveId
+  };
+}

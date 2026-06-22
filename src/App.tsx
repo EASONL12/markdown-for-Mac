@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  addNewDocument,
   addOrActivateDocument,
   addOrActivateDocuments,
   createInitialWorkspace,
   getActiveDocument,
   getDisplayName,
   markActiveSaved,
+  removeDocument,
   selectDocument,
   updateActiveContent
 } from "./lib/documentModel";
@@ -23,6 +25,7 @@ export default function App() {
   const [workspace, setWorkspace] = useState(createInitialWorkspace);
   const [viewMode, setViewMode] = useState<ViewMode>("split");
   const [status, setStatus] = useState("Ready");
+  const [version, setVersion] = useState("");
   const [themeMode, setThemeMode] = useState<ThemeMode>("system");
   const isDark = useMemo(() => {
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -41,9 +44,39 @@ export default function App() {
   const isSyncingRef = useRef(false);
 
   const api = useMemo(() => getPlainMarkApi(), []);
+
+  useEffect(() => {
+    api.getVersion().then(setVersion);
+  }, [api]);
   const activeDocument = getActiveDocument(workspace);
   const rendered = useMemo(() => renderMarkdown(activeDocument.content), [activeDocument.content]);
   const outline = useMemo(() => extractOutline(activeDocument.content), [activeDocument.content]);
+
+  useEffect(() => {
+    const prevent = (e: DragEvent) => { e.preventDefault(); };
+    const handleDrop = async (e: DragEvent) => {
+      e.preventDefault();
+      if (!e.dataTransfer) return;
+      const files = Array.from(e.dataTransfer.files).filter((f) =>
+        /\.(md|markdown|mdown|mkd|txt)$/i.test(f.name)
+      );
+      if (files.length === 0) return;
+      const results = await Promise.all(
+        files.map(async (file) => {
+          const text = await file.text();
+          return { path: file.name, content: text };
+        })
+      );
+      setWorkspace((current) => addOrActivateDocuments(current, results));
+      setStatus(results.length === 1 ? `Opened ${results[0].path}` : `Opened ${results.length} files`);
+    };
+    window.addEventListener("dragover", prevent);
+    window.addEventListener("drop", handleDrop);
+    return () => {
+      window.removeEventListener("dragover", prevent);
+      window.removeEventListener("drop", handleDrop);
+    };
+  }, [api]);
 
   const scrollToHeading = useCallback((headingId: string) => {
     const container = previewScrollRef.current;
@@ -126,17 +159,17 @@ export default function App() {
   }, []);
 
   const focusMatch = useCallback((index: number) => {
-    const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
+    const textarea = textareaRef.current;
     if (!textarea || !searchResult.indices[index]) return;
     const start = searchResult.indices[index];
-    const end = start + searchQuery.length;
+    const end = start + searchResult.matchLengths[index];
     textarea.focus();
     textarea.setSelectionRange(start, end);
     const lines = activeDocument.content.substring(0, start).split("\n");
     const lineNumber = lines.length;
-    const lineHeight = 24;
+    const lineHeight = parseInt(getComputedStyle(textarea).lineHeight) || 24;
     textarea.scrollTop = (lineNumber - 3) * lineHeight;
-  }, [searchResult, searchQuery, activeDocument.content]);
+  }, [searchResult, activeDocument.content]);
 
   const findNext = useCallback(() => {
     if (searchResult.count === 0) return;
@@ -156,10 +189,11 @@ export default function App() {
     if (searchResult.count === 0 || !searchQuery) return;
     const start = searchResult.indices[currentMatch];
     if (start === undefined) return;
+    const matchLen = searchResult.matchLengths[currentMatch];
     const newContent =
       activeDocument.content.substring(0, start) +
       replaceQuery +
-      activeDocument.content.substring(start + searchQuery.length);
+      activeDocument.content.substring(start + matchLen);
     setWorkspace((current) => updateActiveContent(current, newContent));
     const next = currentMatch < searchResult.count - 1 ? currentMatch : 0;
     setCurrentMatch(next);
@@ -199,12 +233,31 @@ export default function App() {
     setStatus(`Saved ${file.path}`);
   }, [activeDocument.content, activeDocument.path, api]);
 
+  const newDocument = useCallback(() => {
+    setWorkspace((current) => addNewDocument(current));
+    setStatus("New document");
+  }, []);
+
+  const closeDocument = useCallback(() => {
+    if (activeDocument.isDirty) {
+      const confirmed = window.confirm("This document has unsaved changes. Close anyway?");
+      if (!confirmed) return;
+    }
+    if (activeDocument.path) {
+      api.unwatchFile(activeDocument.path);
+    }
+    setWorkspace((current) => removeDocument(current, activeDocument.id));
+    setStatus("Closed");
+  }, [activeDocument, api]);
+
   useEffect(() => {
     const removeExternal = api.onExternalFileOpen((file) => {
       setWorkspace((current) => addOrActivateDocument(current, file));
       setStatus(`Opened ${file.path}`);
     });
     const removeOpen = api.onMenuOpen(openDocument);
+    const removeNew = api.onMenuNew(newDocument);
+    const removeClose = api.onMenuClose(closeDocument);
     const removeSave = api.onMenuSave(saveDocument);
     const removeFind = api.onMenuFind(() => {
       setFindOpen(true);
@@ -218,19 +271,33 @@ export default function App() {
     return () => {
       removeExternal();
       removeOpen();
+      removeNew();
+      removeClose();
       removeSave();
       removeFind();
       removeReplace();
     };
-  }, [api, openDocument, saveDocument]);
+  }, [api, openDocument, newDocument, closeDocument, saveDocument]);
 
   useEffect(() => {
     const root = document.documentElement;
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const isDark = themeMode === "dark" || (themeMode === "system" && prefersDark);
-    root.classList.toggle("dark", isDark);
-    root.classList.toggle("light", !isDark);
+
+    function applyTheme() {
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const dark = themeMode === "dark" || (themeMode === "system" && prefersDark);
+      root.classList.toggle("dark", dark);
+      root.classList.toggle("light", !dark);
+    }
+
+    applyTheme();
     api.setTheme(themeMode);
+
+    if (themeMode === "system") {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      const handler = () => applyTheme();
+      mq.addEventListener("change", handler);
+      return () => mq.removeEventListener("change", handler);
+    }
   }, [themeMode, api]);
 
   useEffect(() => {
@@ -257,7 +324,7 @@ export default function App() {
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (workspace.documents.some((d) => d.isDirty && d.path)) {
+      if (workspace.documents.some((d) => d.isDirty)) {
         e.preventDefault();
         e.returnValue = "";
       }
@@ -265,6 +332,48 @@ export default function App() {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [workspace.documents]);
+
+  useEffect(() => {
+    const paths = workspace.documents.filter((d) => d.path).map((d) => d.path as string);
+    const uniquePaths = [...new Set(paths)];
+
+    for (const p of uniquePaths) {
+      api.watchFile(p);
+    }
+
+    return () => {
+      for (const p of uniquePaths) {
+        api.unwatchFile(p);
+      }
+    };
+  }, [workspace.documents, api]);
+
+  useEffect(() => {
+    const removeFileModified = api.onFileModified(async (filePath: string) => {
+      const doc = workspace.documents.find((d) => d.path === filePath);
+      if (!doc) return;
+
+      if (doc.isDirty) {
+        const choice = window.confirm(
+          `"${filePath}" has been modified externally.\n\nReload from disk? (Cancel to keep your changes)`
+        );
+        if (!choice) return;
+      }
+
+      const file = await api.readFile(filePath);
+      if (file) {
+        setWorkspace((current) => {
+          const updated = current.documents.map((d) =>
+            d.path === filePath ? { ...d, content: file.content, isDirty: false } : d
+          );
+          return { ...current, documents: updated };
+        });
+        setStatus(`Reloaded ${filePath}`);
+      }
+    });
+
+    return () => { removeFileModified(); };
+  }, [workspace.documents, api]);
 
   useEffect(() => {
     if (findOpen) {
@@ -371,6 +480,7 @@ export default function App() {
       <footer className="statusbar">
         <span>{status}</span>
         <span>{activeDocument.content.length} chars</span>
+        <span>v{version}</span>
       </footer>
 
       {findOpen && (
