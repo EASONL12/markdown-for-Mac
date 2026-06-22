@@ -288,7 +288,7 @@ textarea {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0;
   justify-content: flex-start;
   text-align: left;
   overflow: hidden;
@@ -300,6 +300,19 @@ textarea {
   gap: 8px;
   min-width: 0;
   flex: 1;
+  border-radius: 6px;
+  padding: 4px 8px;
+  transition: background 0.15s;
+}
+
+.file-item.selected .file-item-btn {
+  background: var(--color-file-dot);
+  color: #fff;
+  font-weight: 500;
+}
+
+.file-item.selected .file-dot {
+  background: #fff;
 }
 
 .file-close-btn {
@@ -329,11 +342,6 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.file-item.selected {
-  border-color: var(--color-file-selected-border);
-  background: var(--color-bg-elevated);
 }
 
 .file-dot {
