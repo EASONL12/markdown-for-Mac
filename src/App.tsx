@@ -238,17 +238,21 @@ export default function App() {
     setStatus("New document");
   }, []);
 
-  const closeDocument = useCallback(() => {
-    if (activeDocument.isDirty) {
+  const closeDocument = useCallback((documentId?: string) => {
+    const doc = documentId
+      ? workspace.documents.find((d) => d.id === documentId)
+      : activeDocument;
+    if (!doc) return;
+    if (doc.isDirty) {
       const confirmed = window.confirm("This document has unsaved changes. Close anyway?");
       if (!confirmed) return;
     }
-    if (activeDocument.path) {
-      api.unwatchFile(activeDocument.path);
+    if (doc.path) {
+      api.unwatchFile(doc.path);
     }
-    setWorkspace((current) => removeDocument(current, activeDocument.id));
+    setWorkspace((current) => removeDocument(current, doc.id));
     setStatus("Closed");
-  }, [activeDocument, api]);
+  }, [activeDocument, workspace.documents, api]);
 
   useEffect(() => {
     const removeExternal = api.onExternalFileOpen((file) => {
@@ -414,19 +418,31 @@ export default function App() {
           <p className="rail-label">Open Files</p>
           <div className="file-list">
             {workspace.documents.map((document) => (
-              <button
+              <div
                 className={`file-item ${document.id === workspace.activeDocumentId ? "selected" : ""}`}
                 key={document.id}
-                type="button"
-                title={document.path ?? "Unsaved file"}
-                onClick={() => {
-                  setWorkspace((current) => selectDocument(current, document.id));
-                  setStatus(document.path ? `Viewing ${document.path}` : "Viewing unsaved file");
-                }}
               >
-                <span className="file-dot" aria-hidden="true" />
-                <span>{getDisplayName(document)}</span>
-              </button>
+                <button
+                  className="file-item-btn"
+                  type="button"
+                  title={document.path ?? "Unsaved file"}
+                  onClick={() => {
+                    setWorkspace((current) => selectDocument(current, document.id));
+                    setStatus(document.path ? `Viewing ${document.path}` : "Viewing unsaved file");
+                  }}
+                >
+                  <span className="file-dot" aria-hidden="true" />
+                  <span>{getDisplayName(document)}</span>
+                </button>
+                <button
+                  className="file-close-btn"
+                  type="button"
+                  title="Close"
+                  onClick={(e) => { e.stopPropagation(); closeDocument(document.id); }}
+                >
+                  ✕
+                </button>
+              </div>
             ))}
           </div>
         </aside>

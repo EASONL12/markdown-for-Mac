@@ -294,12 +294,37 @@ textarea {
   overflow: hidden;
 }
 
+.file-item-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.file-close-btn {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.file-item:hover .file-close-btn {
+  opacity: 0.6;
+}
+
+.file-close-btn:hover {
+  opacity: 1 !important;
+}
+
 .file-list {
   display: grid;
   gap: 8px;
 }
 
-.file-item span:last-child {
+.file-item-btn span:last-child {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
