@@ -19,6 +19,7 @@ import type { LanguageFn } from "highlight.js";
 import type StateBlock from "markdown-it/lib/rules_block/state_block.mjs";
 import type StateInline from "markdown-it/lib/rules_inline/state_inline.mjs";
 import type Token from "markdown-it/lib/token.mjs";
+import { isLocalMarkdownHref } from "./fileLinks";
 
 const escapeHtml = MarkdownIt().utils.escapeHtml;
 
@@ -301,9 +302,10 @@ const markdown: MarkdownIt = new MarkdownIt({
   linkify: true,
   typographer: true,
   highlight(code: string, language: string): string {
+    const encodedCode = encodeURIComponent(code);
     if (language && hljs.getLanguage(language)) {
       try {
-        return `<pre class="hljs"><code class="language-${language}">${hljs.highlight(code, {
+        return `<pre class="hljs code-block"><button class="code-copy-btn" type="button" data-code-copy="${encodedCode}">Copy</button><code class="language-${language}">${hljs.highlight(code, {
           language,
           ignoreIllegals: true
         }).value}</code></pre>`;
@@ -312,7 +314,7 @@ const markdown: MarkdownIt = new MarkdownIt({
       }
     }
 
-    return `<pre class="hljs"><code>${escapeHtml(code)}</code></pre>`;
+    return `<pre class="hljs code-block"><button class="code-copy-btn" type="button" data-code-copy="${encodedCode}">Copy</button><code>${escapeHtml(code)}</code></pre>`;
   }
 });
 
@@ -333,8 +335,19 @@ markdown.renderer.rules.link_open = function (tokens, idx, options, env, self) {
   if (/^https?:\/\//.test(href)) {
     token.attrSet("target", "_blank");
     token.attrSet("rel", "noopener noreferrer");
+  } else if (isLocalMarkdownHref(href)) {
+    token.attrSet("data-local-markdown-link", "true");
   }
   return defaultLinkOpen(tokens, idx, options, env, self);
+};
+
+const defaultImage = markdown.renderer.rules.image || function (tokens, idx, options, _env, self) {
+  return self.renderToken(tokens, idx, options);
+};
+
+markdown.renderer.rules.image = function (tokens, idx, options, env, self) {
+  tokens[idx].attrSet("data-preview-image", "true");
+  return defaultImage(tokens, idx, options, env, self);
 };
 
 export function renderMarkdown(source: string): string {

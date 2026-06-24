@@ -14,6 +14,7 @@ interface UseFileConflictControllerOptions {
     path: string | null;
   };
   api: PlainMarkApi;
+  autoSaveEnabled: boolean;
   rememberRecentPaths(paths: string[]): void;
   setStatus: Dispatch<SetStateAction<string>>;
   setWorkspace: Dispatch<SetStateAction<MarkdownWorkspace>>;
@@ -23,6 +24,7 @@ interface UseFileConflictControllerOptions {
 export function useFileConflictController({
   activeDocument,
   api,
+  autoSaveEnabled,
   rememberRecentPaths,
   setStatus,
   setWorkspace,
@@ -32,6 +34,7 @@ export function useFileConflictController({
 
   useEffect(() => {
     const path = activeDocument.path;
+    if (!autoSaveEnabled) return;
     if (!shouldAutoSaveDocument(path, activeDocument.isDirty, pendingConflictPath)) return;
 
     const timer = setTimeout(async () => {
@@ -43,7 +46,16 @@ export function useFileConflictController({
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [activeDocument.content, activeDocument.path, activeDocument.isDirty, api, pendingConflictPath, setStatus, setWorkspace]);
+  }, [
+    activeDocument.content,
+    activeDocument.path,
+    activeDocument.isDirty,
+    api,
+    autoSaveEnabled,
+    pendingConflictPath,
+    setStatus,
+    setWorkspace
+  ]);
 
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent) => {
@@ -132,4 +144,3 @@ export function useFileConflictController({
     pendingConflictPath
   };
 }
-

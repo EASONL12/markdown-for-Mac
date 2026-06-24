@@ -12,6 +12,21 @@ describe("renderMarkdown", () => {
     expect(html).toContain("language-js");
   });
 
+  it("adds copy controls to fenced code blocks", () => {
+    const html = renderMarkdown("```ts\nconst answer = 42;\n```");
+
+    expect(html).toContain('class="code-copy-btn"');
+    expect(html).toContain('data-code-copy="const%20answer%20%3D%2042%3B%0A"');
+  });
+
+  it("marks local Markdown links and previewable images for app interactions", () => {
+    const html = renderMarkdown("[Next](./next.md#intro)\n\n![Diagram](./diagram.png)");
+
+    expect(html).toContain('data-local-markdown-link="true"');
+    expect(html).toContain('data-preview-image="true"');
+    expect(html).toContain('alt="Diagram"');
+  });
+
   it("does not render raw HTML from a Markdown file", () => {
     const html = renderMarkdown("# Safe\n\n<script>alert('x')</script>");
 

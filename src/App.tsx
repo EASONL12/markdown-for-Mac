@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ConflictDialog } from "./components/ConflictDialog";
 import { FindOverlay } from "./components/FindOverlay";
+import { ImagePreviewDialog } from "./components/ImagePreviewDialog";
 import { QuickOpenOverlay } from "./components/QuickOpenOverlay";
+import { ReadingSettingsPanel } from "./components/ReadingSettingsPanel";
 import { Toolbar } from "./components/Toolbar";
 import { useAppMenuBindings } from "./hooks/useAppMenuBindings";
 import { useDocumentCommands } from "./hooks/useDocumentCommands";
 import { useDocumentDrop } from "./hooks/useDocumentDrop";
 import { useFileConflictController } from "./hooks/useFileConflictController";
 import { useFindController } from "./hooks/useFindController";
+import { usePreviewInteractions } from "./hooks/usePreviewInteractions";
+import { useReadingPositionMemory } from "./hooks/useReadingPositionMemory";
 import { useRecentFiles } from "./hooks/useRecentFiles";
 import { useScrollSyncController } from "./hooks/useScrollSyncController";
 import { useRestoredSession, useSessionPersistence } from "./hooks/useSessionPersistence";
@@ -18,8 +22,10 @@ import {
   updateActiveContent
 } from "./lib/documentModel";
 import { extractOutline, renderMarkdown } from "./lib/markdown";
+import { createDefaultReadingSettings, sanitizeReadingSettings } from "./lib/readingSettings";
 import type { PersistedThemeMode, PersistedViewMode } from "./lib/session";
 import { getPlainMarkApi } from "./platform/plainmarkApi";
+import type { ImagePreviewState } from "./shared/types/ui";
 import "katex/dist/katex.min.css";
 import "./styles.css";
 
@@ -28,12 +34,17 @@ type ThemeMode = PersistedThemeMode;
 
 export default function App() {
   const restoredSession = useRestoredSession();
+  const initialReadingSettings = restoredSession?.readingSettings ?? createDefaultReadingSettings();
   const [workspace, setWorkspace] = useState(() => restoredSession?.workspace ?? createInitialWorkspace());
-  const [viewMode, setViewMode] = useState<ViewMode>(() => restoredSession?.viewMode ?? "split");
+  const [viewMode, setViewMode] = useState<ViewMode>(() => restoredSession?.viewMode ?? initialReadingSettings.defaultViewMode);
   const [status, setStatus] = useState("Ready");
   const [version, setVersion] = useState("");
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => restoredSession?.themeMode ?? "system");
   const [recentOpen, setRecentOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null);
+  const [readingSettings, setReadingSettings] = useState(() => initialReadingSettings);
+  const [readingPositions, setReadingPositions] = useState(() => restoredSession?.readingPositions ?? {});
   const recentInputRef = useRef<HTMLInputElement>(null);
   const {
     filteredRecentFiles,
@@ -56,7 +67,7 @@ export default function App() {
     api.getVersion().then(setVersion);
   }, [api]);
 
-  useSessionPersistence(workspace, viewMode, themeMode);
+  useSessionPersistence(workspace, viewMode, themeMode, readingSettings, readingPositions);
 
   const {
     handlePreviewScroll,
@@ -89,6 +100,30 @@ export default function App() {
     setStatus,
     setWorkspace,
     workspace
+  });
+
+  const { saveCurrentPosition } = useReadingPositionMemory({
+    activeDocument,
+    previewScrollRef,
+    readingPositions,
+    setReadingPositions,
+    setViewMode,
+    textareaRef,
+    viewMode
+  });
+
+  const openLocalMarkdown = useCallback(async (path: string, anchor: string | null) => {
+    const opened = await documentCommands.openMarkdownPath(path);
+    if (opened && anchor) {
+      window.setTimeout(() => scrollToHeading(anchor), 80);
+    }
+  }, [documentCommands, scrollToHeading]);
+
+  const handlePreviewClick = usePreviewInteractions({
+    activeDocumentPath: activeDocument.path,
+    onOpenLocalMarkdown: openLocalMarkdown,
+    setImagePreview,
+    setStatus
   });
 
   useDocumentDrop(documentCommands.openDroppedFiles);
@@ -138,14 +173,21 @@ export default function App() {
   const { handleConflictAction, pendingConflictPath } = useFileConflictController({
     activeDocument,
     api,
+    autoSaveEnabled: readingSettings.autoSave,
     rememberRecentPaths,
     setStatus,
     setWorkspace,
     workspace
   });
 
+  const readingStyle = {
+    "--reading-font-size": `${readingSettings.fontSize}px`,
+    "--reading-line-height": String(readingSettings.lineHeight),
+    "--reading-width": `${readingSettings.readingWidth}px`
+  } as CSSProperties;
+
   return (
-    <main className="app-shell">
+    <main className="app-shell" style={readingStyle}>
       <Toolbar
         isDark={isDark}
         viewMode={viewMode}
@@ -155,6 +197,7 @@ export default function App() {
         onSaveAs={documentCommands.saveDocumentAs}
         onExportHtml={() => documentCommands.exportDocument("html")}
         onExportPdf={() => documentCommands.exportDocument("pdf")}
+        onOpenSettings={() => setSettingsOpen(true)}
         onToggleTheme={() => setThemeMode((prev) => (prev === "dark" ? "light" : "dark"))}
         onViewModeChange={setViewMode}
       />
@@ -198,7 +241,12 @@ export default function App() {
               value={activeDocument.content}
               spellCheck="false"
               onChange={(event) => updateActiveDocumentContent(event.target.value)}
-              onScroll={handleTextareaScroll}
+              onKeyUp={saveCurrentPosition}
+              onScroll={() => {
+                handleTextareaScroll();
+                saveCurrentPosition();
+              }}
+              onSelect={saveCurrentPosition}
               aria-label="Markdown editor"
             />
           </label>
@@ -208,7 +256,11 @@ export default function App() {
             <div
               className="markdown-preview"
               ref={previewScrollRef}
-              onScroll={handlePreviewScroll}
+              onClick={handlePreviewClick}
+              onScroll={() => {
+                handlePreviewScroll();
+                saveCurrentPosition();
+              }}
               dangerouslySetInnerHTML={{ __html: rendered }}
             />
           </article>
@@ -272,6 +324,21 @@ export default function App() {
           onClose={() => setRecentOpen(false)}
           onOpenRecentDocument={documentCommands.openRecentDocument}
           onRecentSearchChange={setRecentSearch}
+        />
+      )}
+
+      {settingsOpen && (
+        <ReadingSettingsPanel
+          settings={readingSettings}
+          onClose={() => setSettingsOpen(false)}
+          onSettingsChange={(settings) => setReadingSettings(sanitizeReadingSettings(settings))}
+        />
+      )}
+
+      {imagePreview && (
+        <ImagePreviewDialog
+          image={imagePreview}
+          onClose={() => setImagePreview(null)}
         />
       )}
 

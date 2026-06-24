@@ -127,6 +127,24 @@ export function useDocumentCommands({
     }
   }, [api, rememberRecentPaths, removeRecentPath, setRecentOpen, setStatus, setWorkspace]);
 
+  const openMarkdownPath = useCallback(async (path: string): Promise<boolean> => {
+    try {
+      const file = await api.readFile(path);
+      if (!file) {
+        setStatus(`Could not open ${path}`);
+        return false;
+      }
+
+      setWorkspace((current) => addOrActivateDocument(current, file));
+      rememberRecentPaths([file.path]);
+      setStatus(`Opened ${file.path}`);
+      return true;
+    } catch {
+      setStatus(`Could not open ${path}`);
+      return false;
+    }
+  }, [api, rememberRecentPaths, setStatus, setWorkspace]);
+
   const newDocument = useCallback(() => {
     setWorkspace((current) => addNewDocument(current));
     setStatus("New document");
@@ -172,6 +190,7 @@ export function useDocumentCommands({
     openDocument,
     openDroppedFiles,
     openExternalFile,
+    openMarkdownPath,
     openRecentDocument,
     openRecentPanel,
     saveDocument,
@@ -179,4 +198,3 @@ export function useDocumentCommands({
     selectDocumentById
   };
 }
-

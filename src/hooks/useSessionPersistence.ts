@@ -6,6 +6,8 @@ import {
   type PersistedThemeMode,
   type PersistedViewMode
 } from "../lib/session";
+import type { ReadingPositions } from "../lib/readingPosition";
+import type { ReadingSettings } from "../lib/readingSettings";
 
 const sessionStorageKey = "plainmark:session:v1";
 
@@ -19,14 +21,16 @@ export function useRestoredSession() {
 export function useSessionPersistence(
   workspace: MarkdownWorkspace,
   viewMode: PersistedViewMode,
-  themeMode: PersistedThemeMode
+  themeMode: PersistedThemeMode,
+  readingSettings: ReadingSettings,
+  readingPositions: ReadingPositions
 ): void {
   useEffect(() => {
-    const snapshot = createSessionSnapshot(workspace, viewMode, themeMode);
+    const snapshot = createSessionSnapshot(workspace, viewMode, themeMode, readingSettings, readingPositions);
     try {
       window.localStorage.setItem(sessionStorageKey, JSON.stringify(snapshot));
     } catch {
       // Ignore storage failures so editing and saving keep working.
     }
-  }, [workspace, viewMode, themeMode]);
+  }, [workspace, viewMode, themeMode, readingSettings, readingPositions]);
 }
