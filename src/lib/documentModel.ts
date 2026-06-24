@@ -132,8 +132,12 @@ export function updateActiveContent(workspace: MarkdownWorkspace, content: strin
 export function markActiveSaved(workspace: MarkdownWorkspace, path: string): MarkdownWorkspace {
   const activeDocument = getActiveDocument(workspace);
   const savedDocument = markSaved(activeDocument, path);
+  const nextDocuments = workspace.documents
+    .filter((document) => document.id === activeDocument.id || document.path !== path)
+    .map((document) => (document.id === activeDocument.id ? savedDocument : document));
+
   return {
-    documents: workspace.documents.map((document) => (document.id === activeDocument.id ? savedDocument : document)),
+    documents: nextDocuments,
     activeDocumentId: savedDocument.id
   };
 }

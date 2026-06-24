@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FindOverlay } from "./components/FindOverlay";
+import { QuickOpenOverlay } from "./components/QuickOpenOverlay";
+import { Toolbar } from "./components/Toolbar";
+import { useRecentFiles } from "./hooks/useRecentFiles";
+import { useRestoredSession, useSessionPersistence } from "./hooks/useSessionPersistence";
 import {
   addNewDocument,
   addOrActivateDocument,
@@ -13,20 +18,66 @@ import {
 } from "./lib/documentModel";
 import { extractOutline, renderMarkdown } from "./lib/markdown";
 import { findAll, replaceAll } from "./lib/search";
-import { findPreviewScrollTop, findTextareaScrollTop } from "./lib/scrollSync";
+import {
+  findPreviewScrollTop,
+  findPreviewScrollTopForSourceLine,
+  findSourceLineForPreviewScrollTop,
+  findTextareaScrollTop,
+  findTextareaScrollTopForSourceLine,
+  findTextareaSourceLine,
+  type SourceScrollAnchor
+} from "./lib/scrollSync";
+import type { PersistedThemeMode, PersistedViewMode } from "./lib/session";
 import { getPlainMarkApi } from "./platform/plainmarkApi";
 import "katex/dist/katex.min.css";
 import "./styles.css";
 
-type ViewMode = "edit" | "split" | "preview" | "read";
-type ThemeMode = "light" | "dark" | "system";
+type ViewMode = PersistedViewMode;
+type ThemeMode = PersistedThemeMode;
+
+function getLineHeight(textarea: HTMLTextAreaElement): number {
+  const parsed = parseFloat(getComputedStyle(textarea).lineHeight);
+  return Number.isFinite(parsed) ? parsed : 24;
+}
+
+function getLineCount(source: string): number {
+  return source.split("\n").length;
+}
+
+function getPreviewSourceAnchors(container: HTMLElement): SourceScrollAnchor[] {
+  return Array.from(container.querySelectorAll<HTMLElement>("[data-source-line]"))
+    .map((element) => {
+      const line = Number(element.dataset.sourceLine);
+      if (!Number.isFinite(line)) return null;
+      return {
+        line,
+        scrollTop: Math.max(0, element.offsetTop - container.offsetTop)
+      };
+    })
+    .filter((anchor): anchor is SourceScrollAnchor => anchor !== null);
+}
+
+function setScrollTopIfMeaningful(element: HTMLElement, targetScrollTop: number): void {
+  if (Math.abs(element.scrollTop - targetScrollTop) > 1) {
+    element.scrollTop = targetScrollTop;
+  }
+}
 
 export default function App() {
-  const [workspace, setWorkspace] = useState(createInitialWorkspace);
-  const [viewMode, setViewMode] = useState<ViewMode>("split");
+  const restoredSession = useRestoredSession();
+  const [workspace, setWorkspace] = useState(() => restoredSession?.workspace ?? createInitialWorkspace());
+  const [viewMode, setViewMode] = useState<ViewMode>(() => restoredSession?.viewMode ?? "split");
   const [status, setStatus] = useState("Ready");
   const [version, setVersion] = useState("");
-  const [themeMode, setThemeMode] = useState<ThemeMode>("system");
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => restoredSession?.themeMode ?? "system");
+  const [recentOpen, setRecentOpen] = useState(false);
+  const {
+    filteredRecentFiles,
+    recentSearch,
+    rememberRecentPaths,
+    removeRecentPath,
+    setRecentSearch
+  } = useRecentFiles();
   const isDark = useMemo(() => {
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     return themeMode === "dark" || (themeMode === "system" && prefersDark);
@@ -41,6 +92,7 @@ export default function App() {
   const previewScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
+  const recentInputRef = useRef<HTMLInputElement>(null);
   const isSyncingRef = useRef(false);
 
   const api = useMemo(() => getPlainMarkApi(), []);
@@ -51,6 +103,8 @@ export default function App() {
   const activeDocument = getActiveDocument(workspace);
   const rendered = useMemo(() => renderMarkdown(activeDocument.content), [activeDocument.content]);
   const outline = useMemo(() => extractOutline(activeDocument.content), [activeDocument.content]);
+
+  useSessionPersistence(workspace, viewMode, themeMode);
 
   useEffect(() => {
     const prevent = (e: DragEvent) => { e.preventDefault(); };
@@ -68,6 +122,7 @@ export default function App() {
         })
       );
       setWorkspace((current) => addOrActivateDocuments(current, results));
+      rememberRecentPaths(results.map((file) => file.path));
       setStatus(results.length === 1 ? `Opened ${results[0].path}` : `Opened ${results.length} files`);
     };
     window.addEventListener("dragover", prevent);
@@ -76,7 +131,7 @@ export default function App() {
       window.removeEventListener("dragover", prevent);
       window.removeEventListener("drop", handleDrop);
     };
-  }, [api]);
+  }, [rememberRecentPaths]);
 
   const scrollToHeading = useCallback((headingId: string) => {
     const container = previewScrollRef.current;
@@ -97,6 +152,14 @@ export default function App() {
     });
   }, []);
 
+  const releaseScrollSyncLock = useCallback(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        isSyncingRef.current = false;
+      });
+    });
+  }, []);
+
   const handleTextareaScroll = useCallback(() => {
     if (isSyncingRef.current || viewMode !== "split") return;
     isSyncingRef.current = true;
@@ -109,17 +172,28 @@ export default function App() {
         return;
       }
 
-      const targetScroll = findPreviewScrollTop(
+      const previewMax = Math.max(0, preview.scrollHeight - preview.clientHeight);
+      const sourceLine = findTextareaSourceLine(
+        textarea.scrollTop,
+        getLineHeight(textarea),
+        getLineCount(textarea.value)
+      );
+      const anchoredScrollTop = findPreviewScrollTopForSourceLine(
+        sourceLine,
+        getPreviewSourceAnchors(preview),
+        previewMax
+      );
+      const targetScroll = anchoredScrollTop ?? findPreviewScrollTop(
         textarea.scrollTop,
         textarea.scrollHeight,
         textarea.clientHeight,
         preview.scrollHeight,
         preview.clientHeight
       );
-      preview.scrollTop = targetScroll;
-      setTimeout(() => { isSyncingRef.current = false; }, 50);
+      setScrollTopIfMeaningful(preview, targetScroll);
+      releaseScrollSyncLock();
     });
-  }, [viewMode]);
+  }, [releaseScrollSyncLock, viewMode]);
 
   const handlePreviewScroll = useCallback(() => {
     if (isSyncingRef.current || viewMode !== "split") return;
@@ -133,17 +207,26 @@ export default function App() {
         return;
       }
 
-      const targetScroll = findTextareaScrollTop(
+      const textareaMax = Math.max(0, textarea.scrollHeight - textarea.clientHeight);
+      const sourceLine = findSourceLineForPreviewScrollTop(
+        preview.scrollTop,
+        getPreviewSourceAnchors(preview),
+        Math.max(0, getLineCount(textarea.value) - 1)
+      );
+      const anchoredScrollTop = sourceLine === null
+        ? null
+        : findTextareaScrollTopForSourceLine(sourceLine, getLineHeight(textarea), textareaMax);
+      const targetScroll = anchoredScrollTop ?? findTextareaScrollTop(
         preview.scrollTop,
         preview.scrollHeight,
         preview.clientHeight,
         textarea.scrollHeight,
         textarea.clientHeight
       );
-      textarea.scrollTop = targetScroll;
-      setTimeout(() => { isSyncingRef.current = false; }, 50);
+      setScrollTopIfMeaningful(textarea, targetScroll);
+      releaseScrollSyncLock();
     });
-  }, [viewMode]);
+  }, [releaseScrollSyncLock, viewMode]);
 
   const searchResult = useMemo(
     () => findAll(activeDocument.content, searchQuery, { caseSensitive: matchCase, useRegex }),
@@ -216,8 +299,9 @@ export default function App() {
     }
 
     setWorkspace((current) => addOrActivateDocuments(current, files));
+    rememberRecentPaths(files.map((file) => file.path));
     setStatus(files.length === 1 ? `Opened ${files[0].path}` : `Opened ${files.length} files`);
-  }, [api]);
+  }, [api, rememberRecentPaths]);
 
   const saveDocument = useCallback(async () => {
     const file = await api.saveMarkdown({
@@ -230,8 +314,49 @@ export default function App() {
     }
 
     setWorkspace((current) => markActiveSaved(current, file.path));
+    rememberRecentPaths([file.path]);
     setStatus(`Saved ${file.path}`);
-  }, [activeDocument.content, activeDocument.path, api]);
+  }, [activeDocument.content, activeDocument.path, api, rememberRecentPaths]);
+
+  const saveDocumentAs = useCallback(async () => {
+    const file = await api.saveMarkdownAs({
+      path: activeDocument.path,
+      content: activeDocument.content
+    });
+
+    if (!file) {
+      return;
+    }
+
+    setWorkspace((current) => markActiveSaved(current, file.path));
+    rememberRecentPaths([file.path]);
+    setStatus(`Saved as ${file.path}`);
+  }, [activeDocument.content, activeDocument.path, api, rememberRecentPaths]);
+
+  const openRecentPanel = useCallback(() => {
+    setRecentOpen(true);
+    setRecentSearch("");
+    setTimeout(() => recentInputRef.current?.focus(), 50);
+  }, []);
+
+  const openRecentDocument = useCallback(async (path: string) => {
+    try {
+      const file = await api.readFile(path);
+      if (!file) {
+        removeRecentPath(path);
+        setStatus(`Could not open ${path}`);
+        return;
+      }
+
+      setWorkspace((current) => addOrActivateDocument(current, file));
+      rememberRecentPaths([file.path]);
+      setRecentOpen(false);
+      setStatus(`Opened ${file.path}`);
+    } catch {
+      removeRecentPath(path);
+      setStatus(`Could not open ${path}`);
+    }
+  }, [api, rememberRecentPaths, removeRecentPath]);
 
   const newDocument = useCallback(() => {
     setWorkspace((current) => addNewDocument(current));
@@ -257,12 +382,15 @@ export default function App() {
   useEffect(() => {
     const removeExternal = api.onExternalFileOpen((file) => {
       setWorkspace((current) => addOrActivateDocument(current, file));
+      rememberRecentPaths([file.path]);
       setStatus(`Opened ${file.path}`);
     });
     const removeOpen = api.onMenuOpen(openDocument);
+    const removeOpenRecent = api.onMenuOpenRecent(openRecentPanel);
     const removeNew = api.onMenuNew(newDocument);
     const removeClose = api.onMenuClose(closeDocument);
     const removeSave = api.onMenuSave(saveDocument);
+    const removeSaveAs = api.onMenuSaveAs(saveDocumentAs);
     const removeFind = api.onMenuFind(() => {
       setFindOpen(true);
       setReplaceVisible(false);
@@ -275,13 +403,15 @@ export default function App() {
     return () => {
       removeExternal();
       removeOpen();
+      removeOpenRecent();
       removeNew();
       removeClose();
       removeSave();
+      removeSaveAs();
       removeFind();
       removeReplace();
     };
-  }, [api, openDocument, newDocument, closeDocument, saveDocument]);
+  }, [api, openDocument, openRecentPanel, newDocument, closeDocument, saveDocument, saveDocumentAs, rememberRecentPaths]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -387,31 +517,16 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <header className="toolbar">
-        <div className="traffic-spacer" aria-hidden="true" />
-        <div className="brand">
-          <span className="brand-mark">P</span>
-          <span>PlainMark</span>
-        </div>
-        <div className="toolbar-actions">
-          <button type="button" onClick={openDocument}>Open</button>
-          <button type="button" onClick={saveDocument}>Save</button>
-        </div>
-        <div className="segmented" aria-label="View mode">
-          <button className={viewMode === "edit" ? "active" : ""} type="button" onClick={() => setViewMode("edit")}>Edit</button>
-          <button className={viewMode === "split" ? "active" : ""} type="button" onClick={() => setViewMode("split")}>Split</button>
-          <button className={viewMode === "preview" ? "active" : ""} type="button" onClick={() => setViewMode("preview")}>Preview</button>
-          <button className={viewMode === "read" ? "active" : ""} type="button" onClick={() => setViewMode("read")}>Read</button>
-        </div>
-        <button
-          type="button"
-          className="theme-toggle"
-          onClick={() => setThemeMode((prev) => (prev === "dark" ? "light" : "dark"))}
-          title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-        >
-          {isDark ? "☀️" : "🌙"}
-        </button>
-      </header>
+      <Toolbar
+        isDark={isDark}
+        viewMode={viewMode}
+        onOpen={openDocument}
+        onOpenRecent={openRecentPanel}
+        onSave={saveDocument}
+        onSaveAs={saveDocumentAs}
+        onToggleTheme={() => setThemeMode((prev) => (prev === "dark" ? "light" : "dark"))}
+        onViewModeChange={setViewMode}
+      />
 
       <section className={`workspace ${viewMode === "read" ? "workspace-read" : ""}`}>
         <aside className="file-rail">
@@ -500,59 +615,39 @@ export default function App() {
       </footer>
 
       {findOpen && (
-        <div className="find-overlay">
-          <div className="find-row">
-            <input
-              ref={findInputRef}
-              type="text"
-              placeholder="Find..."
-              value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setCurrentMatch(0); }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") findNext();
-                if (e.key === "Escape") closeFind();
-              }}
-            />
-            <button
-              type="button"
-              className={matchCase ? "active" : ""}
-              onClick={() => setMatchCase((p) => !p)}
-              title="Match Case"
-            >
-              Aa
-            </button>
-            <button
-              type="button"
-              className={useRegex ? "active" : ""}
-              onClick={() => setUseRegex((p) => !p)}
-              title="Use Regex"
-            >
-              .*
-            </button>
-            <span className="find-count">
-              {searchQuery ? (searchResult.count > 0 ? `${currentMatch + 1}/${searchResult.count}` : "No results") : ""}
-            </span>
-            <button type="button" onClick={findPrev} title="Previous">↑</button>
-            <button type="button" onClick={findNext} title="Next">↓</button>
-            <button type="button" onClick={closeFind} title="Close">✕</button>
-          </div>
-          {replaceVisible && (
-            <div className="find-row">
-              <input
-                type="text"
-                placeholder="Replace..."
-                value={replaceQuery}
-                onChange={(e) => setReplaceQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") replaceCurrent();
-                  if (e.key === "Escape") closeFind();
-                }}
-              />
-              <button type="button" onClick={replaceCurrent}>Replace</button>
-              <button type="button" onClick={replaceAllMatches}>All</button>
-            </div>
-          )}
-        </div>
+        <FindOverlay
+          currentMatch={currentMatch}
+          findInputRef={findInputRef}
+          matchCase={matchCase}
+          replaceQuery={replaceQuery}
+          replaceVisible={replaceVisible}
+          searchQuery={searchQuery}
+          totalMatches={searchResult.count}
+          useRegex={useRegex}
+          onClose={closeFind}
+          onFindNext={findNext}
+          onFindPrev={findPrev}
+          onMatchCaseChange={setMatchCase}
+          onReplaceAll={replaceAllMatches}
+          onReplaceCurrent={replaceCurrent}
+          onReplaceQueryChange={setReplaceQuery}
+          onSearchQueryChange={(query) => {
+            setSearchQuery(query);
+            setCurrentMatch(0);
+          }}
+          onUseRegexChange={setUseRegex}
+        />
+      )}
+
+      {recentOpen && (
+        <QuickOpenOverlay
+          filteredRecentFiles={filteredRecentFiles}
+          recentInputRef={recentInputRef}
+          recentSearch={recentSearch}
+          onClose={() => setRecentOpen(false)}
+          onOpenRecentDocument={openRecentDocument}
+          onRecentSearchChange={setRecentSearch}
+        />
       )}
     </main>
   );

@@ -107,4 +107,23 @@ describe("documentModel", () => {
     expect(workspace.documents).toHaveLength(2);
     expect(workspace.documents.find((document) => document.path === null)?.content).toBe("# Draft");
   });
+
+  it("deduplicates documents when saving to a path that is already open", () => {
+    const workspace = addOrActivateDocument(
+      addOrActivateDocument(createInitialWorkspace(), {
+        path: "/Users/easonlin/Desktop/first.md",
+        content: "# First"
+      }),
+      {
+        path: "/Users/easonlin/Desktop/second.md",
+        content: "# Second"
+      }
+    );
+
+    const saved = markActiveSaved(workspace, "/Users/easonlin/Desktop/first.md");
+
+    expect(saved.documents).toHaveLength(1);
+    expect(saved.activeDocumentId).toBe("/Users/easonlin/Desktop/first.md");
+    expect(getActiveDocument(saved).content).toBe("# Second");
+  });
 });
