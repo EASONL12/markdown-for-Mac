@@ -1,11 +1,47 @@
-import hljs from "highlight.js";
+import hljs from "highlight.js/lib/core";
+import bash from "highlight.js/lib/languages/bash";
+import c from "highlight.js/lib/languages/c";
+import cpp from "highlight.js/lib/languages/cpp";
+import css from "highlight.js/lib/languages/css";
+import go from "highlight.js/lib/languages/go";
+import java from "highlight.js/lib/languages/java";
+import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
+import markdownLanguage from "highlight.js/lib/languages/markdown";
+import python from "highlight.js/lib/languages/python";
+import rust from "highlight.js/lib/languages/rust";
+import swift from "highlight.js/lib/languages/swift";
+import typescript from "highlight.js/lib/languages/typescript";
+import xml from "highlight.js/lib/languages/xml";
 import katex from "katex";
 import MarkdownIt from "markdown-it";
+import type { LanguageFn } from "highlight.js";
 import type StateBlock from "markdown-it/lib/rules_block/state_block.mjs";
 import type StateInline from "markdown-it/lib/rules_inline/state_inline.mjs";
 import type Token from "markdown-it/lib/token.mjs";
 
 const escapeHtml = MarkdownIt().utils.escapeHtml;
+
+const highlightedLanguages: Array<[string, LanguageFn]> = [
+  ["bash", bash],
+  ["c", c],
+  ["cpp", cpp],
+  ["css", css],
+  ["go", go],
+  ["java", java],
+  ["javascript", javascript],
+  ["json", json],
+  ["markdown", markdownLanguage],
+  ["python", python],
+  ["rust", rust],
+  ["swift", swift],
+  ["typescript", typescript],
+  ["xml", xml]
+];
+
+highlightedLanguages.forEach(([language, definition]) => {
+  hljs.registerLanguage(language, definition);
+});
 
 export interface OutlineItem {
   id: string;
