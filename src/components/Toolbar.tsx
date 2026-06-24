@@ -7,6 +7,8 @@ interface ToolbarProps {
   onOpenRecent: () => void;
   onSave: () => void;
   onSaveAs: () => void;
+  onExportHtml: () => void;
+  onExportPdf: () => void;
   onToggleTheme: () => void;
   onViewModeChange: (viewMode: PersistedViewMode) => void;
 }
@@ -24,6 +26,8 @@ export function Toolbar({
   onOpenRecent,
   onSave,
   onSaveAs,
+  onExportHtml,
+  onExportPdf,
   onToggleTheme,
   onViewModeChange
 }: ToolbarProps) {
@@ -39,6 +43,8 @@ export function Toolbar({
         <button type="button" onClick={onOpenRecent}>Recent</button>
         <button type="button" onClick={onSave}>Save</button>
         <button type="button" onClick={onSaveAs}>Save As</button>
+        <button type="button" onClick={onExportHtml}>HTML</button>
+        <button type="button" onClick={onExportPdf}>PDF</button>
       </div>
       <div className="segmented" aria-label="View mode">
         {viewModes.map((mode) => (

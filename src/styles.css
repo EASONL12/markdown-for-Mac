@@ -727,3 +727,57 @@ textarea {
   text-align: center;
   font-size: 12px;
 }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 16, 14, 0.36);
+}
+
+.conflict-dialog {
+  width: min(460px, calc(100vw - 40px));
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg-elevated);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
+  padding: 20px;
+}
+
+.conflict-dialog h2 {
+  margin: 0 0 10px;
+  color: var(--color-heading);
+  font-size: 18px;
+}
+
+.conflict-path {
+  margin: 0 0 12px;
+  overflow: hidden;
+  color: var(--color-text-subtle);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conflict-message {
+  margin: 0 0 18px;
+  color: var(--color-text);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.conflict-actions .primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #ffffff;
+}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ConflictDialog } from "./components/ConflictDialog";
 import { FindOverlay } from "./components/FindOverlay";
 import { QuickOpenOverlay } from "./components/QuickOpenOverlay";
 import { Toolbar } from "./components/Toolbar";
@@ -16,6 +17,14 @@ import {
   selectDocument,
   updateActiveContent
 } from "./lib/documentModel";
+import {
+  buildExportHtml,
+  getConflictCopyPath,
+  getDefaultExportPath,
+  shouldAutoSaveDocument,
+  type ConflictAction,
+  type ExportFormat
+} from "./lib/exportDocument";
 import { extractOutline, renderMarkdown } from "./lib/markdown";
 import { findAll, replaceAll } from "./lib/search";
 import {
@@ -89,6 +98,7 @@ export default function App() {
   const [matchCase, setMatchCase] = useState(false);
   const [useRegex, setUseRegex] = useState(false);
   const [currentMatch, setCurrentMatch] = useState(0);
+  const [pendingConflictPath, setPendingConflictPath] = useState<string | null>(null);
   const previewScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
@@ -333,6 +343,22 @@ export default function App() {
     setStatus(`Saved as ${file.path}`);
   }, [activeDocument.content, activeDocument.path, api, rememberRecentPaths]);
 
+  const exportDocument = useCallback(async (format: ExportFormat) => {
+    const html = buildExportHtml({
+      bodyHtml: rendered,
+      sourcePath: activeDocument.path,
+      theme: isDark ? "dark" : "light"
+    });
+    const defaultPath = getDefaultExportPath(activeDocument.path, format);
+    const exportedPath = format === "html"
+      ? await api.exportHtml({ defaultPath, html })
+      : await api.exportPdf({ defaultPath, html });
+
+    if (exportedPath) {
+      setStatus(`Exported ${exportedPath}`);
+    }
+  }, [activeDocument.path, api, isDark, rendered]);
+
   const openRecentPanel = useCallback(() => {
     setRecentOpen(true);
     setRecentSearch("");
@@ -391,6 +417,8 @@ export default function App() {
     const removeClose = api.onMenuClose(closeDocument);
     const removeSave = api.onMenuSave(saveDocument);
     const removeSaveAs = api.onMenuSaveAs(saveDocumentAs);
+    const removeExportHtml = api.onMenuExportHtml(() => exportDocument("html"));
+    const removeExportPdf = api.onMenuExportPdf(() => exportDocument("pdf"));
     const removeFind = api.onMenuFind(() => {
       setFindOpen(true);
       setReplaceVisible(false);
@@ -408,10 +436,22 @@ export default function App() {
       removeClose();
       removeSave();
       removeSaveAs();
+      removeExportHtml();
+      removeExportPdf();
       removeFind();
       removeReplace();
     };
-  }, [api, openDocument, openRecentPanel, newDocument, closeDocument, saveDocument, saveDocumentAs, rememberRecentPaths]);
+  }, [
+    api,
+    openDocument,
+    openRecentPanel,
+    newDocument,
+    closeDocument,
+    saveDocument,
+    saveDocumentAs,
+    exportDocument,
+    rememberRecentPaths
+  ]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -443,7 +483,7 @@ export default function App() {
 
   useEffect(() => {
     const path = activeDocument.path;
-    if (!path || !activeDocument.isDirty) return;
+    if (!shouldAutoSaveDocument(path, activeDocument.isDirty, pendingConflictPath)) return;
 
     const timer = setTimeout(async () => {
       const result = await api.saveMarkdown({ path, content: activeDocument.content });
@@ -454,7 +494,7 @@ export default function App() {
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [activeDocument.content, activeDocument.path, activeDocument.isDirty, api]);
+  }, [activeDocument.content, activeDocument.path, activeDocument.isDirty, api, pendingConflictPath]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -482,32 +522,61 @@ export default function App() {
     };
   }, [workspace.documents, api]);
 
+  const reloadDocumentFromDisk = useCallback(async (filePath: string) => {
+    const file = await api.readFile(filePath);
+    if (file) {
+      setWorkspace((current) => {
+        const updated = current.documents.map((d) =>
+          d.path === filePath ? { ...d, content: file.content, isDirty: false } : d
+        );
+        return { ...current, documents: updated };
+      });
+      setStatus(`Reloaded ${filePath}`);
+    }
+  }, [api]);
+
   useEffect(() => {
     const removeFileModified = api.onFileModified(async (filePath: string) => {
       const doc = workspace.documents.find((d) => d.path === filePath);
       if (!doc) return;
 
       if (doc.isDirty) {
-        const choice = window.confirm(
-          `"${filePath}" has been modified externally.\n\nReload from disk? (Cancel to keep your changes)`
-        );
-        if (!choice) return;
+        setPendingConflictPath(filePath);
+        return;
       }
 
-      const file = await api.readFile(filePath);
-      if (file) {
-        setWorkspace((current) => {
-          const updated = current.documents.map((d) =>
-            d.path === filePath ? { ...d, content: file.content, isDirty: false } : d
-          );
-          return { ...current, documents: updated };
-        });
-        setStatus(`Reloaded ${filePath}`);
-      }
+      await reloadDocumentFromDisk(filePath);
     });
 
     return () => { removeFileModified(); };
-  }, [workspace.documents, api]);
+  }, [workspace.documents, api, reloadDocumentFromDisk]);
+
+  const handleConflictAction = useCallback(async (action: ConflictAction) => {
+    if (!pendingConflictPath) return;
+
+    const filePath = pendingConflictPath;
+    const doc = workspace.documents.find((d) => d.path === filePath);
+    setPendingConflictPath(null);
+
+    if (action === "keep-local" || action === "dismiss" || !doc) {
+      setStatus(action === "keep-local" ? "Kept local edits" : "Dismissed external change");
+      return;
+    }
+
+    if (action === "save-copy") {
+      const savedCopy = await api.saveMarkdownAs({
+        path: getConflictCopyPath(filePath),
+        content: doc.content
+      });
+      if (!savedCopy) {
+        setStatus("Save copy canceled");
+        return;
+      }
+      rememberRecentPaths([savedCopy.path]);
+    }
+
+    await reloadDocumentFromDisk(filePath);
+  }, [api, pendingConflictPath, reloadDocumentFromDisk, rememberRecentPaths, workspace.documents]);
 
   useEffect(() => {
     if (findOpen) {
@@ -524,6 +593,8 @@ export default function App() {
         onOpenRecent={openRecentPanel}
         onSave={saveDocument}
         onSaveAs={saveDocumentAs}
+        onExportHtml={() => exportDocument("html")}
+        onExportPdf={() => exportDocument("pdf")}
         onToggleTheme={() => setThemeMode((prev) => (prev === "dark" ? "light" : "dark"))}
         onViewModeChange={setViewMode}
       />
@@ -647,6 +718,14 @@ export default function App() {
           onClose={() => setRecentOpen(false)}
           onOpenRecentDocument={openRecentDocument}
           onRecentSearchChange={setRecentSearch}
+        />
+      )}
+
+      {pendingConflictPath && (
+        <ConflictDialog
+          filePath={pendingConflictPath}
+          isDirty={workspace.documents.some((document) => document.path === pendingConflictPath && document.isDirty)}
+          onAction={handleConflictAction}
         />
       )}
     </main>

@@ -84,6 +84,59 @@ async function writeMarkdownFile(file, forceDialog = false) {
   return { path: targetPath, content: file.content };
 }
 
+async function pickExportPath(defaultPath, title, extension) {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title,
+    defaultPath,
+    filters: [{ name: extension.toUpperCase(), extensions: [extension] }]
+  });
+
+  if (result.canceled || !result.filePath) {
+    return null;
+  }
+
+  return result.filePath;
+}
+
+async function exportHtmlFile(file) {
+  const targetPath = await pickExportPath(file.defaultPath, "Export HTML", "html");
+  if (!targetPath) {
+    return null;
+  }
+
+  await fs.writeFile(targetPath, file.html, "utf8");
+  return targetPath;
+}
+
+async function exportPdfFile(file) {
+  const targetPath = await pickExportPath(file.defaultPath, "Export PDF", "pdf");
+  if (!targetPath) {
+    return null;
+  }
+
+  const pdfWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+
+  try {
+    const dataUrl = "data:text/html;charset=utf-8," + encodeURIComponent(file.html);
+    await pdfWindow.loadURL(dataUrl);
+    const pdfData = await pdfWindow.webContents.printToPDF({
+      printBackground: true,
+      pageSize: "A4"
+    });
+    await fs.writeFile(targetPath, pdfData);
+    return targetPath;
+  } finally {
+    pdfWindow.close();
+  }
+}
+
 function createMenu() {
   const isMac = process.platform === "darwin";
   const template = [
@@ -131,6 +184,16 @@ function createMenu() {
           accelerator: "CmdOrCtrl+Shift+S",
           click: () => mainWindow?.webContents.send("menu:save-as")
         },
+        { type: "separator" },
+        {
+          label: "Export HTML...",
+          click: () => mainWindow?.webContents.send("menu:export-html")
+        },
+        {
+          label: "Export PDF...",
+          click: () => mainWindow?.webContents.send("menu:export-pdf")
+        },
+        { type: "separator" },
         {
           label: "Close Tab",
           accelerator: "CmdOrCtrl+W",
@@ -282,6 +345,14 @@ ipcMain.handle("markdown:save", async (_event, file) => {
 
 ipcMain.handle("markdown:save-as", async (_event, file) => {
   return writeMarkdownFile(file, true);
+});
+
+ipcMain.handle("export:html", async (_event, file) => {
+  return exportHtmlFile(file);
+});
+
+ipcMain.handle("export:pdf", async (_event, file) => {
+  return exportPdfFile(file);
 });
 
 ipcMain.handle("file:watch", (_event, filePath) => {

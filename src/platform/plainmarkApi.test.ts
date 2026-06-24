@@ -8,6 +8,8 @@ describe("createBrowserPreviewApi", () => {
     await expect(api.openMarkdown()).resolves.toBeNull();
     await expect(api.saveMarkdown({ path: null, content: "# Draft" })).resolves.toBeNull();
     await expect(api.saveMarkdownAs({ path: "/tmp/draft.md", content: "# Draft" })).resolves.toBeNull();
+    await expect(api.exportHtml({ defaultPath: "Draft.html", html: "<h1>Draft</h1>" })).resolves.toBeNull();
+    await expect(api.exportPdf({ defaultPath: "Draft.pdf", html: "<h1>Draft</h1>" })).resolves.toBeNull();
   });
 
   it("returns unsubscribe functions for preview subscriptions", () => {
@@ -18,5 +20,7 @@ describe("createBrowserPreviewApi", () => {
     expect(api.onMenuOpen(callback)).toEqual(expect.any(Function));
     expect(api.onMenuSave(callback)).toEqual(expect.any(Function));
     expect(api.onMenuOpenRecent(callback)).toEqual(expect.any(Function));
+    expect(api.onMenuExportHtml(callback)).toEqual(expect.any(Function));
+    expect(api.onMenuExportPdf(callback)).toEqual(expect.any(Function));
   });
 });
