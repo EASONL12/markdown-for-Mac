@@ -1,4 +1,4 @@
-import type { PlainMarkApi } from "../global";
+import type { PlainMarkApi } from "../shared/types/plainmarkApi";
 
 const noopUnsubscribe = () => undefined;
 

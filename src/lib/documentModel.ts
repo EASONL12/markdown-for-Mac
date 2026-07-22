@@ -1,13 +1,10 @@
+import type { OpenedMarkdownFile } from "../shared/types/document";
+
 export interface MarkdownDocument {
   id: string;
   path: string | null;
   content: string;
   isDirty: boolean;
-}
-
-export interface OpenedMarkdownFile {
-  path: string;
-  content: string;
 }
 
 export interface MarkdownWorkspace {

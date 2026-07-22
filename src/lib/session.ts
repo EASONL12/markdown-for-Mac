@@ -1,10 +1,21 @@
 import type { MarkdownWorkspace } from "./documentModel";
+import {
+  createDefaultReadingSettings,
+  sanitizeReadingSettings,
+  type ReadingSettings
+} from "./readingSettings";
+import {
+  sanitizeReadingPositions,
+  type ReadingPositions
+} from "./readingPosition";
 
 export type PersistedViewMode = "edit" | "split" | "preview" | "read";
 export type PersistedThemeMode = "light" | "dark" | "system";
 
 export interface PlainMarkSessionSnapshot {
-  version: 1;
+  version: 2;
+  readingPositions: ReadingPositions;
+  readingSettings: ReadingSettings;
   workspace: MarkdownWorkspace;
   viewMode: PersistedViewMode;
   themeMode: PersistedThemeMode;
@@ -40,10 +51,14 @@ function isMarkdownWorkspace(value: unknown): value is MarkdownWorkspace {
 export function createSessionSnapshot(
   workspace: MarkdownWorkspace,
   viewMode: PersistedViewMode,
-  themeMode: PersistedThemeMode
+  themeMode: PersistedThemeMode,
+  readingSettings: ReadingSettings = createDefaultReadingSettings(),
+  readingPositions: ReadingPositions = {}
 ): PlainMarkSessionSnapshot {
   return {
-    version: 1,
+    version: 2,
+    readingPositions,
+    readingSettings,
     workspace,
     viewMode,
     themeMode
@@ -58,7 +73,7 @@ export function restoreSessionSnapshot(_serialized: string | null): PlainMarkSes
   try {
     const parsed: unknown = JSON.parse(_serialized);
     if (!isRecord(parsed)) return null;
-    if (parsed.version !== 1) return null;
+    if (parsed.version !== 1 && parsed.version !== 2) return null;
     const workspace = parsed.workspace;
     if (!isMarkdownWorkspace(workspace)) return null;
     if (!validViewModes.has(parsed.viewMode as PersistedViewMode)) return null;
@@ -68,7 +83,11 @@ export function restoreSessionSnapshot(_serialized: string | null): PlainMarkSes
     }
 
     return {
-      version: 1,
+      version: 2,
+      readingPositions: parsed.version === 2 ? sanitizeReadingPositions(parsed.readingPositions) : {},
+      readingSettings: parsed.version === 2
+        ? sanitizeReadingSettings(parsed.readingSettings)
+        : createDefaultReadingSettings(),
       workspace,
       viewMode: parsed.viewMode as PersistedViewMode,
       themeMode: parsed.themeMode as PersistedThemeMode
