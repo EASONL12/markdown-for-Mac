@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 function subscribe(channel, callback) {
   const listener = (_event, payload) => callback(payload);
@@ -30,5 +30,6 @@ contextBridge.exposeInMainWorld("plainmark", {
   unwatchFile: (filePath) => ipcRenderer.invoke("file:unwatch", filePath),
   onFileModified: (callback) => subscribe("file:modified", callback),
   readFile: (filePath) => ipcRenderer.invoke("markdown:read", filePath),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
   getVersion: () => ipcRenderer.invoke("app:version")
 });

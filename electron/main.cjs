@@ -37,9 +37,15 @@ async function openExternalFile(filePath) {
 function watchFile(filePath) {
   if (fileWatchers.has(filePath)) return;
 
+  // Watch the parent directory instead of the file itself: the app writes via
+  // a temp file + rename, which replaces the inode a file watcher is bound to.
+  // A directory watcher keeps working across those atomic saves.
   try {
     let lastEvent = 0;
-    const watcher = fsSync.watch(filePath, () => {
+    const directory = path.dirname(filePath);
+    const basename = path.basename(filePath);
+    const watcher = fsSync.watch(directory, (_event, filename) => {
+      if (filename && filename !== basename) return;
       const now = Date.now();
       if (now - lastEvent < 500) return;
       lastEvent = now;
@@ -49,7 +55,7 @@ function watchFile(filePath) {
     });
     fileWatchers.set(filePath, watcher);
   } catch {
-    // File may not exist yet, ignore
+    // Directory may not exist yet, ignore
   }
 }
 

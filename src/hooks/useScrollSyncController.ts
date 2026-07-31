@@ -1,12 +1,12 @@
 import { useCallback, useRef } from "react";
 import {
+  collectSourceAnchors,
   findPreviewScrollTop,
   findPreviewScrollTopForSourceLine,
   findSourceLineForPreviewScrollTop,
   findTextareaScrollTop,
   findTextareaScrollTopForSourceLine,
-  findTextareaSourceLine,
-  type SourceScrollAnchor
+  findTextareaSourceLine
 } from "../lib/scrollSync";
 import type { PersistedViewMode } from "../lib/session";
 
@@ -17,19 +17,6 @@ function getLineHeight(textarea: HTMLTextAreaElement): number {
 
 function getLineCount(source: string): number {
   return source.split("\n").length;
-}
-
-function getPreviewSourceAnchors(container: HTMLElement): SourceScrollAnchor[] {
-  return Array.from(container.querySelectorAll<HTMLElement>("[data-source-line]"))
-    .map((element) => {
-      const line = Number(element.dataset.sourceLine);
-      if (!Number.isFinite(line)) return null;
-      return {
-        line,
-        scrollTop: Math.max(0, element.offsetTop - container.offsetTop)
-      };
-    })
-    .filter((anchor): anchor is SourceScrollAnchor => anchor !== null);
 }
 
 function setScrollTopIfMeaningful(element: HTMLElement, targetScrollTop: number): void {
@@ -90,7 +77,7 @@ export function useScrollSyncController(viewMode: PersistedViewMode) {
       );
       const anchoredScrollTop = findPreviewScrollTopForSourceLine(
         sourceLine,
-        getPreviewSourceAnchors(preview),
+        collectSourceAnchors(preview),
         previewMax
       );
       const targetScroll = anchoredScrollTop ?? findPreviewScrollTop(
@@ -120,7 +107,7 @@ export function useScrollSyncController(viewMode: PersistedViewMode) {
       const textareaMax = Math.max(0, textarea.scrollHeight - textarea.clientHeight);
       const sourceLine = findSourceLineForPreviewScrollTop(
         preview.scrollTop,
-        getPreviewSourceAnchors(preview),
+        collectSourceAnchors(preview),
         Math.max(0, getLineCount(textarea.value) - 1)
       );
       const anchoredScrollTop = sourceLine === null

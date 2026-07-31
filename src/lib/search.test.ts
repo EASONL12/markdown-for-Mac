@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findAll, replaceAll } from "./search";
+import { findAll, findNextMatchAfterReplace, replaceAll } from "./search";
 
 describe("findAll", () => {
   it("returns empty for empty query", () => {
@@ -85,5 +85,51 @@ describe("replaceAll", () => {
       useRegex: false
     });
     expect(result).toBe("price is €4.50");
+  });
+});
+
+describe("findNextMatchAfterReplace", () => {
+  const options = { caseSensitive: false, useRegex: false };
+
+  it("lands on the next remaining match when lengths are equal", () => {
+    const result = findNextMatchAfterReplace("foo foo foo", 0, 3, "foo", "bar", options);
+    expect(result.content).toBe("bar foo foo");
+    expect(result.nextIndex).toBe(0);
+  });
+
+  it("skips matches overlapping the replaced region", () => {
+    // "foofoo foo" has matches at 0, 3, 7; the two inside the inserted text
+    // (0 and 3) lie before the end of the replacement and must be skipped.
+    const result = findNextMatchAfterReplace("foo foo", 0, 3, "foo", "foofoo", options);
+    expect(result.content).toBe("foofoo foo");
+    expect(result.nextIndex).toBe(2);
+  });
+
+  it("stays correct when the replacement changes length", () => {
+    const result = findNextMatchAfterReplace("a1 b22 c333", 1, 1, "\\d+", "X", {
+      caseSensitive: false,
+      useRegex: true
+    });
+    // "a1 b22 c333" -> "aX b22 c333"; next digit run starts at 4
+    expect(result.content).toBe("aX b22 c333");
+    expect(result.nextIndex).toBe(0);
+  });
+
+  it("wraps to the first match after replacing the last remaining one", () => {
+    const result = findNextMatchAfterReplace("foo foo", 4, 3, "foo", "bar", options);
+    expect(result.content).toBe("foo bar");
+    expect(result.nextIndex).toBe(0);
+  });
+
+  it("handles empty replacement", () => {
+    const result = findNextMatchAfterReplace("aaabbb", 0, 3, "aaa", "", options);
+    expect(result.content).toBe("bbb");
+    expect(result.nextIndex).toBe(0);
+  });
+
+  it("wraps to zero when no matches remain", () => {
+    const result = findNextMatchAfterReplace("foo", 0, 3, "foo", "bar", options);
+    expect(result.content).toBe("bar");
+    expect(result.nextIndex).toBe(0);
   });
 });

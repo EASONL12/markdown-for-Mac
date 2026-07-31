@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
-import { markActiveSaved, type MarkdownWorkspace } from "../lib/documentModel";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { markDocumentSaved, type MarkdownWorkspace } from "../lib/documentModel";
 import {
   getConflictCopyPath,
   shouldAutoSaveDocument,
@@ -9,6 +9,7 @@ import type { PlainMarkApi } from "../shared/types/plainmarkApi";
 
 interface UseFileConflictControllerOptions {
   activeDocument: {
+    id: string;
     content: string;
     isDirty: boolean;
     path: string | null;
@@ -31,16 +32,19 @@ export function useFileConflictController({
   workspace
 }: UseFileConflictControllerOptions) {
   const [pendingConflictPath, setPendingConflictPath] = useState<string | null>(null);
+  const documentsRef = useRef(workspace.documents);
+  documentsRef.current = workspace.documents;
 
   useEffect(() => {
     const path = activeDocument.path;
     if (!autoSaveEnabled) return;
     if (!shouldAutoSaveDocument(path, activeDocument.isDirty, pendingConflictPath)) return;
 
+    const documentId = activeDocument.id;
     const timer = setTimeout(async () => {
       const result = await api.saveMarkdown({ path, content: activeDocument.content });
       if (result) {
-        setWorkspace((current) => markActiveSaved(current, result.path));
+        setWorkspace((current) => markDocumentSaved(current, documentId, result.path));
         setStatus("Auto-saved");
       }
     }, 1500);
@@ -48,6 +52,7 @@ export function useFileConflictController({
     return () => clearTimeout(timer);
   }, [
     activeDocument.content,
+    activeDocument.id,
     activeDocument.path,
     activeDocument.isDirty,
     api,
@@ -68,37 +73,49 @@ export function useFileConflictController({
     return () => window.removeEventListener("beforeunload", handler);
   }, [workspace.documents]);
 
-  useEffect(() => {
-    const paths = workspace.documents.filter((document) => document.path).map((document) => document.path as string);
-    const uniquePaths = [...new Set(paths)];
+  // Register watchers only when the set of open paths changes, not on every keystroke.
+  const watchedPathsKey = useMemo(
+    () => [...new Set(workspace.documents.filter((document) => document.path).map((document) => document.path as string))]
+      .sort()
+      .join("\n"),
+    [workspace.documents]
+  );
 
-    for (const path of uniquePaths) {
+  useEffect(() => {
+    const paths = watchedPathsKey ? watchedPathsKey.split("\n") : [];
+
+    for (const path of paths) {
       api.watchFile(path);
     }
 
     return () => {
-      for (const path of uniquePaths) {
+      for (const path of paths) {
         api.unwatchFile(path);
       }
     };
-  }, [workspace.documents, api]);
+  }, [api, watchedPathsKey]);
 
   const reloadDocumentFromDisk = useCallback(async (filePath: string) => {
     const file = await api.readFile(filePath);
-    if (file) {
-      setWorkspace((current) => {
-        const updated = current.documents.map((document) =>
-          document.path === filePath ? { ...document, content: file.content, isDirty: false } : document
-        );
-        return { ...current, documents: updated };
-      });
-      setStatus(`Reloaded ${filePath}`);
+    if (!file) return;
+
+    const current = documentsRef.current.find((document) => document.path === filePath);
+    if (!current || current.content === file.content) {
+      return;
     }
+
+    setWorkspace((workspaceState) => {
+      const updated = workspaceState.documents.map((document) =>
+        document.path === filePath ? { ...document, content: file.content, isDirty: false } : document
+      );
+      return { ...workspaceState, documents: updated };
+    });
+    setStatus(`Reloaded ${filePath}`);
   }, [api, setStatus, setWorkspace]);
 
   useEffect(() => {
     const removeFileModified = api.onFileModified(async (filePath: string) => {
-      const doc = workspace.documents.find((document) => document.path === filePath);
+      const doc = documentsRef.current.find((document) => document.path === filePath);
       if (!doc) return;
 
       if (doc.isDirty) {
@@ -110,13 +127,13 @@ export function useFileConflictController({
     });
 
     return () => { removeFileModified(); };
-  }, [workspace.documents, api, reloadDocumentFromDisk]);
+  }, [api, reloadDocumentFromDisk]);
 
   const handleConflictAction = useCallback(async (action: ConflictAction) => {
     if (!pendingConflictPath) return;
 
     const filePath = pendingConflictPath;
-    const doc = workspace.documents.find((document) => document.path === filePath);
+    const doc = documentsRef.current.find((document) => document.path === filePath);
     setPendingConflictPath(null);
 
     if (action === "keep-local" || action === "dismiss" || !doc) {
@@ -137,7 +154,7 @@ export function useFileConflictController({
     }
 
     await reloadDocumentFromDisk(filePath);
-  }, [api, pendingConflictPath, reloadDocumentFromDisk, rememberRecentPaths, setStatus, workspace.documents]);
+  }, [api, pendingConflictPath, reloadDocumentFromDisk, rememberRecentPaths, setStatus]);
 
   return {
     handleConflictAction,

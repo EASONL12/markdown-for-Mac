@@ -5,7 +5,7 @@ import {
   createInitialWorkspace,
   getActiveDocument,
   getDisplayName,
-  markActiveSaved,
+  markDocumentSaved,
   markSaved,
   selectDocument,
   updateActiveContent,
@@ -90,7 +90,7 @@ describe("documentModel", () => {
 
     const selected = selectDocument(workspace, "/Users/easonlin/Desktop/first.md");
     const edited = updateActiveContent(selected, "# First\n\nEdited");
-    const saved = markActiveSaved(edited, "/Users/easonlin/Desktop/first.md");
+    const saved = markDocumentSaved(edited, selected.activeDocumentId, "/Users/easonlin/Desktop/first.md");
 
     expect(getActiveDocument(edited).isDirty).toBe(true);
     expect(getActiveDocument(saved).isDirty).toBe(false);
@@ -120,7 +120,7 @@ describe("documentModel", () => {
       }
     );
 
-    const saved = markActiveSaved(workspace, "/Users/easonlin/Desktop/first.md");
+    const saved = markDocumentSaved(workspace, workspace.activeDocumentId, "/Users/easonlin/Desktop/first.md");
 
     expect(saved.documents).toHaveLength(1);
     expect(saved.activeDocumentId).toBe("/Users/easonlin/Desktop/first.md");

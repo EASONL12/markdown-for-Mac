@@ -34,6 +34,7 @@ export interface PlainMarkApi {
   unwatchFile(filePath: string): Promise<void>;
   onFileModified(callback: (filePath: string) => void): () => void;
   readFile(filePath: string): Promise<OpenedMarkdownFile | null>;
+  getPathForFile(file: File): string | null;
   getVersion(): Promise<string>;
 }
 

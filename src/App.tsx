@@ -93,7 +93,9 @@ export default function App() {
   const find = useFindController({
     content: activeDocument.content,
     onContentChange: updateActiveDocumentContent,
-    textareaRef
+    previewScrollRef,
+    textareaRef,
+    viewMode
   });
 
   const documentCommands = useDocumentCommands({

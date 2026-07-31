@@ -3,6 +3,19 @@ export interface SourceScrollAnchor {
   scrollTop: number;
 }
 
+export function collectSourceAnchors(container: HTMLElement): SourceScrollAnchor[] {
+  return Array.from(container.querySelectorAll<HTMLElement>("[data-source-line]"))
+    .map((element) => {
+      const line = Number(element.dataset.sourceLine);
+      if (!Number.isFinite(line)) return null;
+      return {
+        line,
+        scrollTop: Math.max(0, element.offsetTop - container.offsetTop)
+      };
+    })
+    .filter((anchor): anchor is SourceScrollAnchor => anchor !== null);
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
