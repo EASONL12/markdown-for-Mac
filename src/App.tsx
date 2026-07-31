@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ConflictDialog } from "./components/ConflictDialog";
 import { FindOverlay } from "./components/FindOverlay";
+import { IconDoc } from "./components/icons";
 import { ImagePreviewDialog } from "./components/ImagePreviewDialog";
 import { QuickOpenOverlay } from "./components/QuickOpenOverlay";
 import { ReadingSettingsPanel } from "./components/ReadingSettingsPanel";
@@ -56,6 +57,10 @@ export default function App() {
 
   const api = useMemo(() => getPlainMarkApi(), []);
   const activeDocument = getActiveDocument(workspace);
+  const documentTitle = useMemo(
+    () => getDisplayName(activeDocument).replace(/ \*$/, ""),
+    [activeDocument]
+  );
   const rendered = useMemo(() => renderMarkdown(activeDocument.content), [activeDocument.content]);
   const outline = useMemo(() => extractOutline(activeDocument.content), [activeDocument.content]);
   const isDark = useMemo(() => {
@@ -66,6 +71,10 @@ export default function App() {
   useEffect(() => {
     api.getVersion().then(setVersion);
   }, [api]);
+
+  useEffect(() => {
+    document.title = documentTitle ? `${documentTitle} — PlainMark` : "PlainMark";
+  }, [documentTitle]);
 
   useSessionPersistence(workspace, viewMode, themeMode, readingSettings, readingPositions);
 
@@ -189,7 +198,9 @@ export default function App() {
   return (
     <main className="app-shell" style={readingStyle}>
       <Toolbar
+        documentTitle={documentTitle}
         isDark={isDark}
+        isDirty={activeDocument.isDirty}
         viewMode={viewMode}
         onOpen={documentCommands.openDocument}
         onOpenRecent={documentCommands.openRecentPanel}
@@ -217,8 +228,9 @@ export default function App() {
                   title={document.path ?? "Unsaved file"}
                   onClick={() => documentCommands.selectDocumentById(document)}
                 >
-                  <span className="file-dot" aria-hidden="true" />
-                  <span>{getDisplayName(document)}</span>
+                  <IconDoc className="file-icon" />
+                  <span className="file-name">{getDisplayName(document).replace(/ \*$/, "")}</span>
+                  {document.isDirty && <span className="file-dirty-dot" title="Unsaved changes" />}
                 </button>
                 <button
                   className="file-close-btn"
@@ -235,7 +247,6 @@ export default function App() {
 
         <section className={`editor-grid mode-${viewMode}`}>
           <label className="pane editor-pane">
-            <span className="pane-title">Markdown</span>
             <textarea
               ref={textareaRef}
               value={activeDocument.content}
@@ -252,7 +263,6 @@ export default function App() {
           </label>
 
           <article className="pane preview-pane">
-            <div className="pane-title">{viewMode === "read" ? "Reading" : "Preview"}</div>
             <div
               className="markdown-preview"
               ref={previewScrollRef}

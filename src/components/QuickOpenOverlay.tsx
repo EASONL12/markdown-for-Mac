@@ -1,5 +1,6 @@
 import type { RefObject } from "react";
 import { getRecentDisplayName, type RecentFile } from "../lib/recentFiles";
+import { IconClose } from "./icons";
 
 interface QuickOpenOverlayProps {
   filteredRecentFiles: RecentFile[];
@@ -34,7 +35,9 @@ export function QuickOpenOverlay({
             }
           }}
         />
-        <button type="button" onClick={onClose} title="Close">✕</button>
+        <button type="button" className="quick-open-close" onClick={onClose} title="Close" aria-label="Close">
+          <IconClose />
+        </button>
       </div>
       <div className="quick-open-list">
         {filteredRecentFiles.length > 0 ? (

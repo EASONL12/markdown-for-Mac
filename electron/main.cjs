@@ -247,14 +247,14 @@ function createMenu() {
 }
 
 async function createWindow() {
-  const bgColor = nativeTheme.shouldUseDarkColors ? "#1a1e1c" : "#f4f6f5";
   mainWindow = new BrowserWindow({
     width: 1120,
     height: 720,
-    minWidth: 860,
-    minHeight: 620,
+    minWidth: 720,
+    minHeight: 480,
     titleBarStyle: "hiddenInset",
-    backgroundColor: bgColor,
+    vibrancy: "sidebar",
+    visualEffectState: "active",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
