@@ -27,6 +27,7 @@ export function createBrowserPreviewApi(): PlainMarkApi {
     unwatchFile: async () => undefined,
     onFileModified: () => noopUnsubscribe,
     readFile: async () => null,
+    getPathForFile: () => null,
     getVersion: async () => "0.0.0"
   };
 }

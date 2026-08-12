@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { MarkdownWorkspace } from "../lib/documentModel";
 import {
   createSessionSnapshot,
@@ -25,12 +25,28 @@ export function useSessionPersistence(
   readingSettings: ReadingSettings,
   readingPositions: ReadingPositions
 ): void {
+  const timerRef = useRef<number | null>(null);
+
   useEffect(() => {
-    const snapshot = createSessionSnapshot(workspace, viewMode, themeMode, readingSettings, readingPositions);
-    try {
-      window.localStorage.setItem(sessionStorageKey, JSON.stringify(snapshot));
-    } catch {
-      // Ignore storage failures so editing and saving keep working.
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
     }
+
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      const snapshot = createSessionSnapshot(workspace, viewMode, themeMode, readingSettings, readingPositions);
+      try {
+        window.localStorage.setItem(sessionStorageKey, JSON.stringify(snapshot));
+      } catch {
+        // Ignore storage failures so editing and saving keep working.
+      }
+    }, 400);
+
+    return () => {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
   }, [workspace, viewMode, themeMode, readingSettings, readingPositions]);
 }

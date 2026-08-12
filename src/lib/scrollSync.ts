@@ -3,6 +3,19 @@ export interface SourceScrollAnchor {
   scrollTop: number;
 }
 
+export function collectSourceAnchors(container: HTMLElement): SourceScrollAnchor[] {
+  return Array.from(container.querySelectorAll<HTMLElement>("[data-source-line]"))
+    .map((element) => {
+      const line = Number(element.dataset.sourceLine);
+      if (!Number.isFinite(line)) return null;
+      return {
+        line,
+        scrollTop: Math.max(0, element.offsetTop - container.offsetTop)
+      };
+    })
+    .filter((anchor): anchor is SourceScrollAnchor => anchor !== null);
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -117,4 +130,36 @@ export function findTextareaScrollTopForSourceLine(
 ): number {
   if (lineHeight <= 0) return 0;
   return clamp(sourceLine * lineHeight, 0, maxScrollTop);
+}
+
+export function findSourceLineForTextareaOffsets(
+  textareaScrollTop: number,
+  lineOffsets: number[]
+): number {
+  if (lineOffsets.length === 0) return 0;
+
+  const target = Math.max(0, textareaScrollTop);
+  let low = 0;
+  let high = lineOffsets.length - 1;
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (lineOffsets[middle] <= target) {
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+
+  return clamp(high, 0, lineOffsets.length - 1);
+}
+
+export function findTextareaScrollTopForSourceLineOffsets(
+  sourceLine: number,
+  lineOffsets: number[],
+  maxScrollTop: number
+): number {
+  if (lineOffsets.length === 0) return 0;
+  const line = clamp(Math.round(sourceLine), 0, lineOffsets.length - 1);
+  return clamp(lineOffsets[line], 0, maxScrollTop);
 }

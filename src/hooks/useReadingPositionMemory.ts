@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, type Dispatch, type RefObject, type Set
 import type { MarkdownDocument } from "../lib/documentModel";
 import {
   getDocumentPositionKey,
+  getDocumentViewMode,
   updateReadingPosition,
   type ReadingPositions
 } from "../lib/readingPosition";
@@ -9,6 +10,7 @@ import type { PersistedViewMode } from "../lib/session";
 
 interface UseReadingPositionMemoryOptions {
   activeDocument: MarkdownDocument;
+  defaultViewMode: PersistedViewMode;
   previewScrollRef: RefObject<HTMLDivElement | null>;
   readingPositions: ReadingPositions;
   setReadingPositions: Dispatch<SetStateAction<ReadingPositions>>;
@@ -19,6 +21,7 @@ interface UseReadingPositionMemoryOptions {
 
 export function useReadingPositionMemory({
   activeDocument,
+  defaultViewMode,
   previewScrollRef,
   readingPositions,
   setReadingPositions,
@@ -28,31 +31,52 @@ export function useReadingPositionMemory({
 }: UseReadingPositionMemoryOptions) {
   const activeKey = getDocumentPositionKey(activeDocument);
   const restoredKeyRef = useRef<string | null>(null);
-  const saveTimerRef = useRef<number | null>(null);
+  const saveTimersRef = useRef(new Map<string, number>());
 
-  const saveCurrentPosition = useCallback(() => {
-    if (saveTimerRef.current !== null) {
-      window.clearTimeout(saveTimerRef.current);
+  const savePosition = useCallback((positionViewMode: PersistedViewMode, immediate = false) => {
+    const textarea = textareaRef.current;
+    const preview = previewScrollRef.current;
+    const position = {
+      cursorEnd: textarea?.selectionEnd ?? 0,
+      cursorStart: textarea?.selectionStart ?? 0,
+      previewScrollTop: preview?.scrollTop ?? 0,
+      textareaScrollTop: textarea?.scrollTop ?? 0,
+      viewMode: positionViewMode
+    };
+
+    const existingTimer = saveTimersRef.current.get(activeKey);
+    if (existingTimer !== undefined) {
+      window.clearTimeout(existingTimer);
     }
 
-    saveTimerRef.current = window.setTimeout(() => {
-      const textarea = textareaRef.current;
-      const preview = previewScrollRef.current;
-      setReadingPositions((current) => updateReadingPosition(current, activeKey, {
-        cursorEnd: textarea?.selectionEnd ?? 0,
-        cursorStart: textarea?.selectionStart ?? 0,
-        previewScrollTop: preview?.scrollTop ?? 0,
-        textareaScrollTop: textarea?.scrollTop ?? 0,
-        viewMode
-      }));
-    }, 120);
-  }, [activeKey, previewScrollRef, setReadingPositions, textareaRef, viewMode]);
+    const persistPosition = () => {
+      saveTimersRef.current.delete(activeKey);
+      setReadingPositions((current) => updateReadingPosition(current, activeKey, position));
+    };
+
+    if (immediate) {
+      persistPosition();
+      return;
+    }
+
+    saveTimersRef.current.set(activeKey, window.setTimeout(persistPosition, 120));
+  }, [activeKey, previewScrollRef, setReadingPositions, textareaRef]);
+
+  const saveCurrentPosition = useCallback(() => {
+    savePosition(viewMode);
+  }, [savePosition, viewMode]);
+
+  const changeViewMode = useCallback((nextViewMode: PersistedViewMode) => {
+    setViewMode(nextViewMode);
+    savePosition(nextViewMode, true);
+  }, [savePosition, setViewMode]);
 
   useEffect(() => {
     return () => {
-      if (saveTimerRef.current !== null) {
-        window.clearTimeout(saveTimerRef.current);
+      for (const timer of saveTimersRef.current.values()) {
+        window.clearTimeout(timer);
       }
+      saveTimersRef.current.clear();
     };
   }, []);
 
@@ -63,30 +87,22 @@ export function useReadingPositionMemory({
 
     const position = readingPositions[activeKey];
     restoredKeyRef.current = activeKey;
-    if (!position) {
-      return;
-    }
-
-    setViewMode(position.viewMode);
+    setViewMode(getDocumentViewMode(readingPositions, activeKey, defaultViewMode));
     window.requestAnimationFrame(() => {
       const textarea = textareaRef.current;
       const preview = previewScrollRef.current;
       if (textarea) {
-        textarea.scrollTop = position.textareaScrollTop;
-        textarea.setSelectionRange(position.cursorStart, position.cursorEnd);
+        textarea.scrollTop = position?.textareaScrollTop ?? 0;
+        textarea.setSelectionRange(position?.cursorStart ?? 0, position?.cursorEnd ?? 0);
       }
       if (preview) {
-        preview.scrollTop = position.previewScrollTop;
+        preview.scrollTop = position?.previewScrollTop ?? 0;
       }
     });
-  }, [activeKey, previewScrollRef, readingPositions, setViewMode, textareaRef]);
-
-  useEffect(() => {
-    saveCurrentPosition();
-  }, [saveCurrentPosition, viewMode]);
+  }, [activeKey, defaultViewMode, previewScrollRef, readingPositions, setViewMode, textareaRef]);
 
   return {
+    changeViewMode,
     saveCurrentPosition
   };
 }
-

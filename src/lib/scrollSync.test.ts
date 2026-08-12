@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   findPreviewScrollTop,
   findPreviewScrollTopForSourceLine,
+  findSourceLineForTextareaOffsets,
   findSourceLineForPreviewScrollTop,
   findTextareaScrollTop,
   findTextareaScrollTopForSourceLine,
+  findTextareaScrollTopForSourceLineOffsets,
   findTextareaSourceLine
 } from "./scrollSync";
 
@@ -78,5 +80,21 @@ describe("source-line anchored scrolling", () => {
     expect(findTextareaSourceLine(48, 24, 12)).toBe(2);
     expect(findTextareaSourceLine(900, 24, 12)).toBe(11);
     expect(findTextareaScrollTopForSourceLine(5, 24, 300)).toBe(120);
+  });
+
+  it("maps textarea scroll positions using measured wrapped-line offsets", () => {
+    const lineOffsets = [0, 24, 96, 120, 192];
+
+    expect(findSourceLineForTextareaOffsets(0, lineOffsets)).toBe(0);
+    expect(findSourceLineForTextareaOffsets(95, lineOffsets)).toBe(1);
+    expect(findSourceLineForTextareaOffsets(96, lineOffsets)).toBe(2);
+    expect(findSourceLineForTextareaOffsets(999, lineOffsets)).toBe(4);
+  });
+
+  it("maps source lines back to measured wrapped-line offsets", () => {
+    const lineOffsets = [0, 24, 96, 120, 192];
+
+    expect(findTextareaScrollTopForSourceLineOffsets(2, lineOffsets, 300)).toBe(96);
+    expect(findTextareaScrollTopForSourceLineOffsets(4, lineOffsets, 150)).toBe(150);
   });
 });

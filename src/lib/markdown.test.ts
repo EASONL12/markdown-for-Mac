@@ -27,6 +27,25 @@ describe("renderMarkdown", () => {
     expect(html).toContain('alt="Diagram"');
   });
 
+  it("resolves relative preview images against the Markdown file", () => {
+    const html = renderMarkdown(
+      "![Diagram](./images/a%20b.png)",
+      "/Users/me/docs/guide/readme.md"
+    );
+
+    expect(html).toContain('src="file:///Users/me/docs/guide/images/a%20b.png"');
+  });
+
+  it("leaves remote and data images unchanged", () => {
+    const html = renderMarkdown(
+      "![Remote](https://example.com/a.png)\n\n![Inline](data:image/png;base64,abc)",
+      "/Users/me/docs/readme.md"
+    );
+
+    expect(html).toContain('src="https://example.com/a.png"');
+    expect(html).toContain('src="data:image/png;base64,abc"');
+  });
+
   it("does not render raw HTML from a Markdown file", () => {
     const html = renderMarkdown("# Safe\n\n<script>alert('x')</script>");
 

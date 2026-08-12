@@ -48,6 +48,23 @@ export function findAll(source: string, query: string, options: SearchOptions): 
   return { count: indices.length, indices, matchLengths };
 }
 
+export function findNextMatchAfterReplace(
+  originalContent: string,
+  start: number,
+  matchLength: number,
+  query: string,
+  replacement: string,
+  options: SearchOptions
+): { content: string; nextIndex: number } {
+  const content =
+    originalContent.substring(0, start) +
+    replacement +
+    originalContent.substring(start + matchLength);
+  const nextResult = findAll(content, query, options);
+  const nextIndex = nextResult.indices.findIndex((index) => index >= start + replacement.length);
+  return { content, nextIndex: nextIndex === -1 ? 0 : nextIndex };
+}
+
 export function replaceAll(
   source: string,
   query: string,

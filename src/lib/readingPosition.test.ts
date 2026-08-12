@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getDocumentPositionKey,
+  getDocumentViewMode,
   sanitizeReadingPositions,
   updateReadingPosition
 } from "./readingPosition";
@@ -28,6 +29,21 @@ describe("reading position memory", () => {
     });
   });
 
+  it("uses the default view only when a document has no remembered view", () => {
+    const positions = {
+      "/docs/readme.md": {
+        cursorEnd: 0,
+        cursorStart: 0,
+        previewScrollTop: 0,
+        textareaScrollTop: 0,
+        viewMode: "preview" as const
+      }
+    };
+
+    expect(getDocumentViewMode(positions, "/docs/readme.md", "read")).toBe("preview");
+    expect(getDocumentViewMode(positions, "/docs/new.md", "read")).toBe("read");
+  });
+
   it("drops invalid restored positions", () => {
     expect(sanitizeReadingPositions({
       ok: {
@@ -49,4 +65,3 @@ describe("reading position memory", () => {
     });
   });
 });
-

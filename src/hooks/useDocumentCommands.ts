@@ -3,7 +3,7 @@ import {
   addNewDocument,
   addOrActivateDocument,
   addOrActivateDocuments,
-  markActiveSaved,
+  markDocumentSaved,
   removeDocument,
   selectDocument,
   type MarkdownDocument,
@@ -57,6 +57,7 @@ export function useDocumentCommands({
   }, [api, rememberRecentPaths, setStatus, setWorkspace]);
 
   const saveDocument = useCallback(async () => {
+    const documentId = activeDocument.id;
     const file = await api.saveMarkdown({
       path: activeDocument.path,
       content: activeDocument.content
@@ -66,12 +67,13 @@ export function useDocumentCommands({
       return;
     }
 
-    setWorkspace((current) => markActiveSaved(current, file.path));
+    setWorkspace((current) => markDocumentSaved(current, documentId, file.path, file.content));
     rememberRecentPaths([file.path]);
     setStatus(`Saved ${file.path}`);
-  }, [activeDocument.content, activeDocument.path, api, rememberRecentPaths, setStatus, setWorkspace]);
+  }, [activeDocument.content, activeDocument.id, activeDocument.path, api, rememberRecentPaths, setStatus, setWorkspace]);
 
   const saveDocumentAs = useCallback(async () => {
+    const documentId = activeDocument.id;
     const file = await api.saveMarkdownAs({
       path: activeDocument.path,
       content: activeDocument.content
@@ -81,10 +83,10 @@ export function useDocumentCommands({
       return;
     }
 
-    setWorkspace((current) => markActiveSaved(current, file.path));
+    setWorkspace((current) => markDocumentSaved(current, documentId, file.path, file.content));
     rememberRecentPaths([file.path]);
     setStatus(`Saved as ${file.path}`);
-  }, [activeDocument.content, activeDocument.path, api, rememberRecentPaths, setStatus, setWorkspace]);
+  }, [activeDocument.content, activeDocument.id, activeDocument.path, api, rememberRecentPaths, setStatus, setWorkspace]);
 
   const exportDocument = useCallback(async (format: ExportFormat) => {
     const html = buildExportHtml({

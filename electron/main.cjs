@@ -8,6 +8,8 @@ let mainWindow = null;
 let rendererReady = false;
 let pendingExternalPaths = [];
 const fileWatchers = new Map();
+const internalWrites = new Map();
+const internalWriteLifetimeMs = 1500;
 
 function isMarkdownPath(filePath) {
   return [".md", ".markdown", ".mdown", ".mkd"].includes(path.extname(filePath).toLowerCase());
@@ -37,19 +39,53 @@ async function openExternalFile(filePath) {
 function watchFile(filePath) {
   if (fileWatchers.has(filePath)) return;
 
+  // Watch the parent directory instead of the file itself: the app writes via
+  // a temp file + rename, which replaces the inode a file watcher is bound to.
+  // A directory watcher keeps working across those atomic saves.
   try {
-    let lastEvent = 0;
-    const watcher = fsSync.watch(filePath, () => {
-      const now = Date.now();
-      if (now - lastEvent < 500) return;
-      lastEvent = now;
-      if (mainWindow && rendererReady) {
-        mainWindow.webContents.send("file:modified", filePath);
+    let notificationTimer = null;
+    const directory = path.dirname(filePath);
+    const basename = path.basename(filePath);
+    const watcher = fsSync.watch(directory, (_event, filename) => {
+      if (filename && filename !== basename) return;
+      if (notificationTimer !== null) {
+        clearTimeout(notificationTimer);
+      }
+      // Give an atomic rename time to settle before comparing the resulting
+      // file with writes initiated by this app.
+      notificationTimer = setTimeout(async () => {
+        notificationTimer = null;
+        const matchingWrites = (internalWrites.get(filePath) ?? [])
+          .filter((write) => write.expiresAt >= Date.now());
+        if (matchingWrites.length > 0) {
+          internalWrites.set(filePath, matchingWrites);
+          try {
+            const content = await fs.readFile(filePath, "utf8");
+            if (matchingWrites.some((write) => content === write.content)) {
+              return;
+            }
+          } catch {
+            // Let the renderer handle a file that disappeared after saving.
+          }
+        } else {
+          internalWrites.delete(filePath);
+        }
+
+        if (mainWindow && rendererReady) {
+          mainWindow.webContents.send("file:modified", filePath);
+        }
+      }, 50);
+    });
+    fileWatchers.set(filePath, {
+      close() {
+        if (notificationTimer !== null) {
+          clearTimeout(notificationTimer);
+        }
+        watcher.close();
       }
     });
-    fileWatchers.set(filePath, watcher);
   } catch {
-    // File may not exist yet, ignore
+    // Directory may not exist yet, ignore
   }
 }
 
@@ -79,8 +115,33 @@ async function writeMarkdownFile(file, forceDialog = false) {
   }
 
   const tmpPath = targetPath + "." + crypto.randomBytes(8).toString("hex") + ".tmp";
-  await fs.writeFile(tmpPath, file.content, "utf8");
-  await fs.rename(tmpPath, targetPath);
+  const internalWrite = {
+    content: file.content,
+    expiresAt: Date.now() + internalWriteLifetimeMs
+  };
+  internalWrites.set(targetPath, [...(internalWrites.get(targetPath) ?? []), internalWrite]);
+  setTimeout(() => {
+    const remainingWrites = (internalWrites.get(targetPath) ?? [])
+      .filter((write) => write !== internalWrite && write.expiresAt >= Date.now());
+    if (remainingWrites.length === 0) {
+      internalWrites.delete(targetPath);
+    } else {
+      internalWrites.set(targetPath, remainingWrites);
+    }
+  }, internalWriteLifetimeMs);
+  try {
+    await fs.writeFile(tmpPath, file.content, "utf8");
+    await fs.rename(tmpPath, targetPath);
+  } catch (error) {
+    const remainingWrites = (internalWrites.get(targetPath) ?? [])
+      .filter((write) => write !== internalWrite);
+    if (remainingWrites.length === 0) {
+      internalWrites.delete(targetPath);
+    } else {
+      internalWrites.set(targetPath, remainingWrites);
+    }
+    throw error;
+  }
   return { path: targetPath, content: file.content };
 }
 

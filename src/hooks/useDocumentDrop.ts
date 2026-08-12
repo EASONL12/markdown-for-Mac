@@ -15,7 +15,8 @@ export function useDocumentDrop(onOpenDroppedFiles: (files: { path: string; cont
       const results = await Promise.all(
         files.map(async (file) => {
           const text = await file.text();
-          return { path: file.name, content: text };
+          const path = window.plainmark?.getPathForFile?.(file) || file.name;
+          return { path, content: text };
         })
       );
       onOpenDroppedFiles(results);

@@ -17,6 +17,14 @@ export function getDocumentPositionKey(document: Pick<MarkdownDocument, "id" | "
   return document.path ?? document.id;
 }
 
+export function getDocumentViewMode(
+  positions: ReadingPositions,
+  key: string,
+  defaultViewMode: PersistedViewMode
+): PersistedViewMode {
+  return positions[key]?.viewMode ?? defaultViewMode;
+}
+
 function isValidPosition(value: unknown): value is ReadingPosition {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -60,4 +68,3 @@ export function updateReadingPosition(
     [key]: position
   };
 }
-
