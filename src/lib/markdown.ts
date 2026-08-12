@@ -19,7 +19,7 @@ import type { LanguageFn } from "highlight.js";
 import type StateBlock from "markdown-it/lib/rules_block/state_block.mjs";
 import type StateInline from "markdown-it/lib/rules_inline/state_inline.mjs";
 import type Token from "markdown-it/lib/token.mjs";
-import { isLocalMarkdownHref } from "./fileLinks";
+import { isLocalMarkdownHref, resolveLocalAssetHref } from "./fileLinks";
 
 const escapeHtml = MarkdownIt().utils.escapeHtml;
 
@@ -346,12 +346,15 @@ const defaultImage = markdown.renderer.rules.image || function (tokens, idx, opt
 };
 
 markdown.renderer.rules.image = function (tokens, idx, options, env, self) {
-  tokens[idx].attrSet("data-preview-image", "true");
+  const token = tokens[idx];
+  const sourcePath = (env as { sourcePath?: string | null }).sourcePath ?? null;
+  token.attrSet("data-preview-image", "true");
+  token.attrSet("src", resolveLocalAssetHref(sourcePath, token.attrGet("src") ?? ""));
   return defaultImage(tokens, idx, options, env, self);
 };
 
-export function renderMarkdown(source: string): string {
-  const env = {};
+export function renderMarkdown(source: string, sourcePath: string | null = null): string {
+  const env = { sourcePath };
   const tokens = markdown.parse(source, env);
   addHeadingIds(tokens);
 

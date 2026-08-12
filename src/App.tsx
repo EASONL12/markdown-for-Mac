@@ -37,7 +37,7 @@ export default function App() {
   const restoredSession = useRestoredSession();
   const initialReadingSettings = restoredSession?.readingSettings ?? createDefaultReadingSettings();
   const [workspace, setWorkspace] = useState(() => restoredSession?.workspace ?? createInitialWorkspace());
-  const [viewMode, setViewMode] = useState<ViewMode>(() => restoredSession?.viewMode ?? initialReadingSettings.defaultViewMode);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => initialReadingSettings.defaultViewMode);
   const [status, setStatus] = useState("Ready");
   const [version, setVersion] = useState("");
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => restoredSession?.themeMode ?? "system");
@@ -61,7 +61,10 @@ export default function App() {
     () => getDisplayName(activeDocument).replace(/ \*$/, ""),
     [activeDocument]
   );
-  const rendered = useMemo(() => renderMarkdown(activeDocument.content), [activeDocument.content]);
+  const rendered = useMemo(
+    () => renderMarkdown(activeDocument.content, activeDocument.path),
+    [activeDocument.content, activeDocument.path]
+  );
   const outline = useMemo(() => extractOutline(activeDocument.content), [activeDocument.content]);
   const isDark = useMemo(() => {
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -113,8 +116,9 @@ export default function App() {
     workspace
   });
 
-  const { saveCurrentPosition } = useReadingPositionMemory({
+  const { changeViewMode, saveCurrentPosition } = useReadingPositionMemory({
     activeDocument,
+    defaultViewMode: readingSettings.defaultViewMode,
     previewScrollRef,
     readingPositions,
     setReadingPositions,
@@ -212,7 +216,7 @@ export default function App() {
         onExportPdf={() => documentCommands.exportDocument("pdf")}
         onOpenSettings={() => setSettingsOpen(true)}
         onToggleTheme={() => setThemeMode((prev) => (prev === "dark" ? "light" : "dark"))}
-        onViewModeChange={setViewMode}
+        onViewModeChange={changeViewMode}
       />
 
       <section className={`workspace ${viewMode === "read" ? "workspace-read" : ""}`}>

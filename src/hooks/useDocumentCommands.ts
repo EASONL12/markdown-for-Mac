@@ -67,7 +67,7 @@ export function useDocumentCommands({
       return;
     }
 
-    setWorkspace((current) => markDocumentSaved(current, documentId, file.path));
+    setWorkspace((current) => markDocumentSaved(current, documentId, file.path, file.content));
     rememberRecentPaths([file.path]);
     setStatus(`Saved ${file.path}`);
   }, [activeDocument.content, activeDocument.id, activeDocument.path, api, rememberRecentPaths, setStatus, setWorkspace]);
@@ -83,7 +83,7 @@ export function useDocumentCommands({
       return;
     }
 
-    setWorkspace((current) => markDocumentSaved(current, documentId, file.path));
+    setWorkspace((current) => markDocumentSaved(current, documentId, file.path, file.content));
     rememberRecentPaths([file.path]);
     setStatus(`Saved as ${file.path}`);
   }, [activeDocument.content, activeDocument.id, activeDocument.path, api, rememberRecentPaths, setStatus, setWorkspace]);

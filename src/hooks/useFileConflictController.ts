@@ -44,7 +44,7 @@ export function useFileConflictController({
     const timer = setTimeout(async () => {
       const result = await api.saveMarkdown({ path, content: activeDocument.content });
       if (result) {
-        setWorkspace((current) => markDocumentSaved(current, documentId, result.path));
+        setWorkspace((current) => markDocumentSaved(current, documentId, result.path, result.content));
         setStatus("Auto-saved");
       }
     }, 1500);

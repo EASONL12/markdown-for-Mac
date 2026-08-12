@@ -90,7 +90,12 @@ describe("documentModel", () => {
 
     const selected = selectDocument(workspace, "/Users/easonlin/Desktop/first.md");
     const edited = updateActiveContent(selected, "# First\n\nEdited");
-    const saved = markDocumentSaved(edited, selected.activeDocumentId, "/Users/easonlin/Desktop/first.md");
+    const saved = markDocumentSaved(
+      edited,
+      selected.activeDocumentId,
+      "/Users/easonlin/Desktop/first.md",
+      "# First\n\nEdited"
+    );
 
     expect(getActiveDocument(edited).isDirty).toBe(true);
     expect(getActiveDocument(saved).isDirty).toBe(false);
@@ -120,10 +125,26 @@ describe("documentModel", () => {
       }
     );
 
-    const saved = markDocumentSaved(workspace, workspace.activeDocumentId, "/Users/easonlin/Desktop/first.md");
+    const saved = markDocumentSaved(
+      workspace,
+      workspace.activeDocumentId,
+      "/Users/easonlin/Desktop/first.md",
+      "# Second"
+    );
 
     expect(saved.documents).toHaveLength(1);
     expect(saved.activeDocumentId).toBe("/Users/easonlin/Desktop/first.md");
     expect(getActiveDocument(saved).content).toBe("# Second");
+  });
+
+  it("keeps a document dirty when it changes while a save is in flight", () => {
+    const workspace = updateActiveContent(createInitialWorkspace(), "# Submitted");
+    const editedAgain = updateActiveContent(workspace, "# Newer edit");
+
+    const saved = markDocumentSaved(editedAgain, "untitled", "/tmp/notes.md", "# Submitted");
+
+    expect(getActiveDocument(saved).path).toBe("/tmp/notes.md");
+    expect(getActiveDocument(saved).content).toBe("# Newer edit");
+    expect(getActiveDocument(saved).isDirty).toBe(true);
   });
 });
