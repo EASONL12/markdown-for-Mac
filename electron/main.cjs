@@ -9,9 +9,37 @@ let rendererReady = false;
 let pendingExternalPaths = [];
 let hasDirtyDocuments = false;
 let closeConfirmed = false;
-const fileWatchers = new Map();
 const internalWrites = new Map();
 const internalWriteLifetimeMs = 1500;
+
+// One OS watcher per directory, shared by every tracked file inside it.
+const WatcherRegistry = require("./watcherRegistry.cjs");
+const watcherRegistry = new WatcherRegistry({
+  fs: fsSync,
+  path,
+  debounceMs: 50,
+  onTrigger: async (filePath) => {
+    const matchingWrites = (internalWrites.get(filePath) ?? [])
+      .filter((write) => write.expiresAt >= Date.now());
+    if (matchingWrites.length > 0) {
+      internalWrites.set(filePath, matchingWrites);
+      try {
+        const content = await fs.readFile(filePath, "utf8");
+        if (matchingWrites.some((write) => content === write.content)) {
+          return;
+        }
+      } catch {
+        // Let the renderer handle a file that disappeared after saving.
+      }
+    } else {
+      internalWrites.delete(filePath);
+    }
+
+    if (mainWindow && rendererReady) {
+      mainWindow.webContents.send("file:modified", filePath);
+    }
+  }
+});
 
 function isMarkdownPath(filePath) {
   return [".md", ".markdown", ".mdown", ".mkd"].includes(path.extname(filePath).toLowerCase());
@@ -39,64 +67,11 @@ async function openExternalFile(filePath) {
 }
 
 function watchFile(filePath) {
-  if (fileWatchers.has(filePath)) return;
-
-  // Watch the parent directory instead of the file itself: the app writes via
-  // a temp file + rename, which replaces the inode a file watcher is bound to.
-  // A directory watcher keeps working across those atomic saves.
-  try {
-    let notificationTimer = null;
-    const directory = path.dirname(filePath);
-    const basename = path.basename(filePath);
-    const watcher = fsSync.watch(directory, (_event, filename) => {
-      if (filename && filename !== basename) return;
-      if (notificationTimer !== null) {
-        clearTimeout(notificationTimer);
-      }
-      // Give an atomic rename time to settle before comparing the resulting
-      // file with writes initiated by this app.
-      notificationTimer = setTimeout(async () => {
-        notificationTimer = null;
-        const matchingWrites = (internalWrites.get(filePath) ?? [])
-          .filter((write) => write.expiresAt >= Date.now());
-        if (matchingWrites.length > 0) {
-          internalWrites.set(filePath, matchingWrites);
-          try {
-            const content = await fs.readFile(filePath, "utf8");
-            if (matchingWrites.some((write) => content === write.content)) {
-              return;
-            }
-          } catch {
-            // Let the renderer handle a file that disappeared after saving.
-          }
-        } else {
-          internalWrites.delete(filePath);
-        }
-
-        if (mainWindow && rendererReady) {
-          mainWindow.webContents.send("file:modified", filePath);
-        }
-      }, 50);
-    });
-    fileWatchers.set(filePath, {
-      close() {
-        if (notificationTimer !== null) {
-          clearTimeout(notificationTimer);
-        }
-        watcher.close();
-      }
-    });
-  } catch {
-    // Directory may not exist yet, ignore
-  }
+  watcherRegistry.watch(filePath);
 }
 
 function unwatchFile(filePath) {
-  const watcher = fileWatchers.get(filePath);
-  if (watcher) {
-    watcher.close();
-    fileWatchers.delete(filePath);
-  }
+  watcherRegistry.unwatch(filePath);
 }
 
 async function writeMarkdownFile(file, forceDialog = false) {
