@@ -31,5 +31,6 @@ contextBridge.exposeInMainWorld("plainmark", {
   onFileModified: (callback) => subscribe("file:modified", callback),
   readFile: (filePath) => ipcRenderer.invoke("markdown:read", filePath),
   getPathForFile: (file) => webUtils.getPathForFile(file),
+  setDirtyState: (hasDirty) => ipcRenderer.send("docs:dirty-changed", hasDirty),
   getVersion: () => ipcRenderer.invoke("app:version")
 });

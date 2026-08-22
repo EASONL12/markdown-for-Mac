@@ -62,16 +62,11 @@ export function useFileConflictController({
     setWorkspace
   ]);
 
+  // Report dirty state to the main process so closing the window can warn
+  // about unsaved edits instead of silently refusing to close.
   useEffect(() => {
-    const handler = (event: BeforeUnloadEvent) => {
-      if (workspace.documents.some((document) => document.isDirty)) {
-        event.preventDefault();
-        event.returnValue = "";
-      }
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [workspace.documents]);
+    api.setDirtyState(workspace.documents.some((document) => document.isDirty));
+  }, [api, workspace.documents]);
 
   // Register watchers only when the set of open paths changes, not on every keystroke.
   const watchedPathsKey = useMemo(

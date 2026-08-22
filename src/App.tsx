@@ -46,6 +46,9 @@ export default function App() {
   const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null);
   const [readingSettings, setReadingSettings] = useState(() => initialReadingSettings);
   const [readingPositions, setReadingPositions] = useState(() => restoredSession?.readingPositions ?? {});
+  const [systemPrefersDark, setSystemPrefersDark] = useState(
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches
+  );
   const recentInputRef = useRef<HTMLInputElement>(null);
   const {
     filteredRecentFiles,
@@ -66,10 +69,7 @@ export default function App() {
     [activeDocument.content, activeDocument.path]
   );
   const outline = useMemo(() => extractOutline(activeDocument.content), [activeDocument.content]);
-  const isDark = useMemo(() => {
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    return themeMode === "dark" || (themeMode === "system" && prefersDark);
-  }, [themeMode]);
+  const isDark = themeMode === "dark" || (themeMode === "system" && systemPrefersDark);
 
   useEffect(() => {
     api.getVersion().then(setVersion);
@@ -158,25 +158,18 @@ export default function App() {
   });
 
   useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (event: MediaQueryListEvent) => setSystemPrefersDark(event.matches);
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
+
+  useEffect(() => {
     const root = document.documentElement;
-
-    function applyTheme() {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      const dark = themeMode === "dark" || (themeMode === "system" && prefersDark);
-      root.classList.toggle("dark", dark);
-      root.classList.toggle("light", !dark);
-    }
-
-    applyTheme();
+    root.classList.toggle("dark", isDark);
+    root.classList.toggle("light", !isDark);
     api.setTheme(themeMode);
-
-    if (themeMode === "system") {
-      const mq = window.matchMedia("(prefers-color-scheme: dark)");
-      const handler = () => applyTheme();
-      mq.addEventListener("change", handler);
-      return () => mq.removeEventListener("change", handler);
-    }
-  }, [themeMode, api]);
+  }, [themeMode, isDark, api]);
 
   useEffect(() => {
     const removeToggle = api.onMenuToggleDark(() => {

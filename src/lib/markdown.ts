@@ -193,8 +193,10 @@ function inlineMathRule(state: StateInline, silent: boolean): boolean {
     return false;
   }
 
-  const content = src.slice(pos + 1, end).trim();
-  if (!content) {
+  // Pandoc-style guards: the delimiters must hug non-whitespace characters so
+  // currency amounts like "$5 and $10" stay plain text.
+  const content = src.slice(pos + 1, end);
+  if (!content || /^\s|\s$/.test(content)) {
     return false;
   }
 

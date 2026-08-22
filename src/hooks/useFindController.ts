@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findAll, findNextMatchAfterReplace, replaceAll } from "../lib/search";
-import { collectSourceAnchors, findPreviewScrollTopForSourceLine } from "../lib/scrollSync";
+import {
+  collectSourceAnchors,
+  findPreviewScrollTopForSourceLine,
+  findTextareaScrollTopForSourceLineOffsets
+} from "../lib/scrollSync";
 import type { PersistedViewMode } from "../lib/session";
+import { getTextareaLineOffsets, type TextareaLineLayout } from "../lib/textareaLayout";
 
 interface UseFindControllerOptions {
   content: string;
@@ -27,6 +32,7 @@ export function useFindController({
   const [currentMatch, setCurrentMatch] = useState(0);
   const findInputRef = useRef<HTMLInputElement>(null);
   const pendingFocusRef = useRef<number | null>(null);
+  const textareaLineLayoutRef = useRef<TextareaLineLayout | null>(null);
 
   const searchResult = useMemo(
     () => findAll(content, searchQuery, { caseSensitive: matchCase, useRegex }),
@@ -69,8 +75,11 @@ export function useFindController({
       if (!textarea) return;
       textarea.focus();
       textarea.setSelectionRange(start, end);
-      const lineHeight = parseInt(getComputedStyle(textarea).lineHeight) || 24;
-      textarea.scrollTop = Math.max(0, (lineCount - 3) * lineHeight);
+      // Measure real line offsets (soft-wrapping included) so the target line
+      // lands on screen exactly like scroll-sync would place it.
+      const offsets = getTextareaLineOffsets(textarea, textareaLineLayoutRef);
+      const maxScrollTop = Math.max(0, textarea.scrollHeight - textarea.clientHeight);
+      textarea.scrollTop = findTextareaScrollTopForSourceLineOffsets(lineCount - 1, offsets, maxScrollTop);
       return;
     }
 

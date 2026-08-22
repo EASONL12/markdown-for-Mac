@@ -7,6 +7,8 @@ const path = require("node:path");
 let mainWindow = null;
 let rendererReady = false;
 let pendingExternalPaths = [];
+let hasDirtyDocuments = false;
+let closeConfirmed = false;
 const fileWatchers = new Map();
 const internalWrites = new Map();
 const internalWriteLifetimeMs = 1500;
@@ -175,6 +177,14 @@ async function exportPdfFile(file) {
     return null;
   }
 
+  // A data: URL page has an opaque origin and cannot load file:// images, so
+  // stage the HTML in a temp file where local images resolve normally.
+  const tempPath = path.join(
+    app.getPath("temp"),
+    "plainmark-print-" + crypto.randomBytes(8).toString("hex") + ".html"
+  );
+  await fs.writeFile(tempPath, file.html, "utf8");
+
   const pdfWindow = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -185,8 +195,7 @@ async function exportPdfFile(file) {
   });
 
   try {
-    const dataUrl = "data:text/html;charset=utf-8," + encodeURIComponent(file.html);
-    await pdfWindow.loadURL(dataUrl);
+    await pdfWindow.loadFile(tempPath);
     const pdfData = await pdfWindow.webContents.printToPDF({
       printBackground: true,
       pageSize: "A4"
@@ -195,6 +204,7 @@ async function exportPdfFile(file) {
     return targetPath;
   } finally {
     pdfWindow.close();
+    fs.unlink(tempPath).catch(() => {});
   }
 }
 
@@ -331,15 +341,39 @@ async function createWindow() {
   }
 
   rendererReady = true;
+  mainWindow.on("close", (event) => {
+    if (closeConfirmed || !hasDirtyDocuments) return;
+    // Cancel the close and ask before discarding unsaved edits; without this
+    // Electron would silently refuse to close the window.
+    event.preventDefault();
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: "warning",
+      message: "You have unsaved changes",
+      detail: "Your changes will be lost if you close without saving.",
+      buttons: ["Close Without Saving", "Cancel"],
+      defaultId: 0,
+      cancelId: 1
+    });
+    if (choice === 0) {
+      closeConfirmed = true;
+      mainWindow.close();
+    }
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
     rendererReady = false;
+    hasDirtyDocuments = false;
+    closeConfirmed = false;
   });
 
   const pathsToOpen = [...pendingExternalPaths];
   pendingExternalPaths = [];
   for (const filePath of pathsToOpen) {
-    await openExternalFile(filePath);
+    try {
+      await openExternalFile(filePath);
+    } catch (error) {
+      dialog.showErrorBox("Could not open Markdown file", error.message);
+    }
   }
 }
 
@@ -384,6 +418,10 @@ ipcMain.handle("markdown:open", async () => {
   }
 
   return Promise.all(result.filePaths.map((filePath) => readMarkdownFile(filePath)));
+});
+
+ipcMain.on("docs:dirty-changed", (_event, hasDirty) => {
+  hasDirtyDocuments = Boolean(hasDirty);
 });
 
 ipcMain.handle("theme:set", async (_event, mode) => {

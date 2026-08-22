@@ -86,6 +86,22 @@ describe("replaceAll", () => {
     });
     expect(result).toBe("price is €4.50");
   });
+
+  it("treats $ sequences in the replacement literally outside regex mode", () => {
+    const result = replaceAll("say hello", "hello", "$&!", {
+      caseSensitive: false,
+      useRegex: false
+    });
+    expect(result).toBe("say $&!");
+  });
+
+  it("expands capture groups in regex mode", () => {
+    const result = replaceAll("john smith", "(\\w+) (\\w+)", "$2, $1", {
+      caseSensitive: true,
+      useRegex: true
+    });
+    expect(result).toBe("smith, john");
+  });
 });
 
 describe("findNextMatchAfterReplace", () => {
@@ -130,6 +146,21 @@ describe("findNextMatchAfterReplace", () => {
   it("wraps to zero when no matches remain", () => {
     const result = findNextMatchAfterReplace("foo", 0, 3, "foo", "bar", options);
     expect(result.content).toBe("bar");
+    expect(result.nextIndex).toBe(0);
+  });
+
+  it("keeps $ sequences in the replacement literal outside regex mode", () => {
+    const result = findNextMatchAfterReplace("say hello now", 4, 5, "hello", "$&!", options);
+    expect(result.content).toBe("say $&! now");
+    expect(result.nextIndex).toBe(0);
+  });
+
+  it("expands capture groups when replacing a single regex match", () => {
+    const result = findNextMatchAfterReplace("john smith", 0, 10, "(\\w+) (\\w+)", "$2 $1", {
+      caseSensitive: false,
+      useRegex: true
+    });
+    expect(result.content).toBe("smith john");
     expect(result.nextIndex).toBe(0);
   });
 });

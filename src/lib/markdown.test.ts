@@ -92,6 +92,27 @@ describe("renderMarkdown", () => {
     expect(html).toContain("msupsub");
   });
 
+  it("keeps currency-style dollar pairs as plain text", () => {
+    const html = renderMarkdown("I paid $5 and $10 total.");
+
+    expect(html).not.toContain("katex");
+    expect(html).toContain("$5 and $10");
+  });
+
+  it("does not treat whitespace-padded dollars as math delimiters", () => {
+    const html = renderMarkdown("$ not math $ stays literal");
+
+    expect(html).not.toContain("katex");
+    expect(html).toContain("$ not math $");
+  });
+
+  it("still renders tight inline math next to currency text", () => {
+    const html = renderMarkdown("Costs $5; formula $a+b$ shown after.");
+
+    expect(html).toContain("katex");
+    expect(html).toContain("Costs $5;");
+  });
+
   it("renders block LaTeX formulas with KaTeX display mode", () => {
     const html = renderMarkdown("Before\n\n$$\na^2 + b^2 = c^2\n$$\n\nAfter");
 
