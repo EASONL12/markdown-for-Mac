@@ -27,6 +27,7 @@ export interface PlainMarkApi {
   onMenuExportPdf(callback: () => void): () => void;
   setTheme(mode: "light" | "dark" | "system"): Promise<void>;
   getTheme(): Promise<"light" | "dark">;
+  onNativeThemeChanged(callback: (scheme: "light" | "dark") => void): () => void;
   onMenuToggleDark(callback: () => void): () => void;
   onMenuFind(callback: () => void): () => void;
   onMenuReplace(callback: () => void): () => void;

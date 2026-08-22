@@ -158,18 +158,30 @@ export default function App() {
   });
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleChange = (event: MediaQueryListEvent) => setSystemPrefersDark(event.matches);
-    mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
-  }, []);
+    let active = true;
+    // Electron does not propagate nativeTheme overrides into the renderer's
+    // prefers-color-scheme media query, so take scheme updates over IPC.
+    api.getTheme().then((scheme) => {
+      if (active) setSystemPrefersDark(scheme === "dark");
+    });
+    const remove = api.onNativeThemeChanged((scheme) => setSystemPrefersDark(scheme === "dark"));
+    return () => {
+      active = false;
+      remove();
+    };
+  }, [api]);
+
+  // Only re-assert the mode on explicit mode changes; asserting on scheme
+  // updates would clobber external overrides and snap back to the saved mode.
+  useEffect(() => {
+    api.setTheme(themeMode);
+  }, [api, themeMode]);
 
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle("dark", isDark);
     root.classList.toggle("light", !isDark);
-    api.setTheme(themeMode);
-  }, [themeMode, isDark, api]);
+  }, [isDark]);
 
   useEffect(() => {
     const removeToggle = api.onMenuToggleDark(() => {

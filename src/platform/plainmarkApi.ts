@@ -20,6 +20,7 @@ export function createBrowserPreviewApi(): PlainMarkApi {
     onMenuExportPdf: () => noopUnsubscribe,
     setTheme: async () => undefined,
     getTheme: async () => "light",
+    onNativeThemeChanged: () => noopUnsubscribe,
     onMenuToggleDark: () => noopUnsubscribe,
     onMenuFind: () => noopUnsubscribe,
     onMenuReplace: () => noopUnsubscribe,

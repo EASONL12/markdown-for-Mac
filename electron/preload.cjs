@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld("plainmark", {
   onMenuExportPdf: (callback) => subscribe("menu:export-pdf", callback),
   setTheme: (mode) => ipcRenderer.invoke("theme:set", mode),
   getTheme: () => ipcRenderer.invoke("theme:get"),
+  onNativeThemeChanged: (callback) => subscribe("theme:native-changed", callback),
   onMenuToggleDark: (callback) => subscribe("menu:toggle-dark", callback),
   onMenuFind: (callback) => subscribe("menu:find", callback),
   onMenuReplace: (callback) => subscribe("menu:replace", callback),

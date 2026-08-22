@@ -424,6 +424,19 @@ ipcMain.on("docs:dirty-changed", (_event, hasDirty) => {
   hasDirtyDocuments = Boolean(hasDirty);
 });
 
+// Chromium does not propagate nativeTheme overrides into the renderer's
+// prefers-color-scheme media query, so push scheme changes over IPC.
+function broadcastNativeTheme() {
+  if (mainWindow && rendererReady) {
+    mainWindow.webContents.send(
+      "theme:native-changed",
+      nativeTheme.shouldUseDarkColors ? "dark" : "light"
+    );
+  }
+}
+
+nativeTheme.on("updated", broadcastNativeTheme);
+
 ipcMain.handle("theme:set", async (_event, mode) => {
   if (mode === "system") {
     nativeTheme.themeSource = "system";
