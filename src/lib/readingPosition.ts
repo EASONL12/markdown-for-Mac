@@ -7,6 +7,7 @@ export interface ReadingPosition {
   previewScrollTop: number;
   textareaScrollTop: number;
   viewMode: PersistedViewMode;
+  savedAt?: number;
 }
 
 export type ReadingPositions = Record<string, ReadingPosition>;
@@ -40,7 +41,22 @@ function isValidPosition(value: unknown): value is ReadingPosition {
     record.previewScrollTop >= 0 &&
     typeof record.textareaScrollTop === "number" &&
     record.textareaScrollTop >= 0 &&
-    validViewModes.has(record.viewMode as PersistedViewMode)
+    validViewModes.has(record.viewMode as PersistedViewMode) &&
+    (record.savedAt === undefined || typeof record.savedAt === "number")
+  );
+}
+
+// Keep the newest `max` positions so long-lived sessions cannot grow the
+// persisted blob without bound. Entries without a timestamp sort as oldest.
+export function limitReadingPositions(positions: ReadingPositions, max: number): ReadingPositions {
+  const entries = Object.entries(positions);
+  if (entries.length <= max) {
+    return positions;
+  }
+  return Object.fromEntries(
+    [...entries]
+      .sort(([, a], [, b]) => (a.savedAt ?? 0) - (b.savedAt ?? 0))
+      .slice(-max)
   );
 }
 
@@ -65,6 +81,6 @@ export function updateReadingPosition(
 ): ReadingPositions {
   return {
     ...positions,
-    [key]: position
+    [key]: { ...position, savedAt: Date.now() }
   };
 }

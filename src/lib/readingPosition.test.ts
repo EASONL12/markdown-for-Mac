@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getDocumentPositionKey,
   getDocumentViewMode,
+  limitReadingPositions,
   sanitizeReadingPositions,
   updateReadingPosition
 } from "./readingPosition";
@@ -25,7 +26,8 @@ describe("reading position memory", () => {
       cursorStart: 4,
       previewScrollTop: 120,
       textareaScrollTop: 40,
-      viewMode: "read"
+      viewMode: "read",
+      savedAt: expect.any(Number)
     });
   });
 
@@ -63,5 +65,19 @@ describe("reading position memory", () => {
         viewMode: "split"
       }
     });
+  });
+
+  it("limits stored positions to the newest entries", () => {
+    const positions = {
+      oldest: { cursorEnd: 0, cursorStart: 0, previewScrollTop: 0, textareaScrollTop: 0, viewMode: "read" as const },
+      newer: { cursorEnd: 0, cursorStart: 0, previewScrollTop: 0, textareaScrollTop: 0, viewMode: "read" as const, savedAt: 100 },
+      newest: { cursorEnd: 0, cursorStart: 0, previewScrollTop: 0, textareaScrollTop: 0, viewMode: "read" as const, savedAt: 200 }
+    };
+
+    const limited = limitReadingPositions(positions, 2);
+
+    expect(Object.keys(limited)).toEqual(["newer", "newest"]);
+    // At or under the cap the input is returned untouched.
+    expect(limitReadingPositions(limited, 2)).toBe(limited);
   });
 });
