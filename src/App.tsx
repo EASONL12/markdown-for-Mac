@@ -68,6 +68,14 @@ export default function App() {
     () => renderMarkdown(activeDocument.content, activeDocument.path),
     [activeDocument.content, activeDocument.path]
   );
+  // Epoch for scroll-sync anchor caching; bumped during render so the version
+  // always matches the preview DOM the renderer is about to commit.
+  const renderVersionRef = useRef(0);
+  const lastRenderedRef = useRef(rendered);
+  if (lastRenderedRef.current !== rendered) {
+    lastRenderedRef.current = rendered;
+    renderVersionRef.current += 1;
+  }
   const outline = useMemo(() => extractOutline(activeDocument.content), [activeDocument.content]);
   const isDark = themeMode === "dark" || (themeMode === "system" && systemPrefersDark);
 
@@ -87,7 +95,7 @@ export default function App() {
     previewScrollRef,
     scrollToHeading,
     textareaRef
-  } = useScrollSyncController(viewMode);
+  } = useScrollSyncController(viewMode, renderVersionRef.current);
 
   const updateActiveDocumentContent = useCallback((content: string) => {
     setWorkspace((current) => updateActiveContent(current, content));

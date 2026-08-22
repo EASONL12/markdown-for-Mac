@@ -21,7 +21,16 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function sortedAnchors(anchors: SourceScrollAnchor[]): SourceScrollAnchor[] {
-  return [...anchors].sort((a, b) => a.line - b.line || a.scrollTop - b.scrollTop);
+  for (let index = 1; index < anchors.length; index += 1) {
+    const previous = anchors[index - 1];
+    const next = anchors[index];
+    if (previous.line > next.line || (previous.line === next.line && previous.scrollTop > next.scrollTop)) {
+      return [...anchors].sort((a, b) => a.line - b.line || a.scrollTop - b.scrollTop);
+    }
+  }
+  // Already ordered — reuse the input without copying so per-frame scroll
+  // lookups stay allocation-free when callers pass pre-sorted anchors.
+  return anchors;
 }
 
 export function findPreviewScrollTop(

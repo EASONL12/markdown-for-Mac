@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   collectSourceAnchors,
   findPreviewScrollTop,
@@ -6,7 +6,8 @@ import {
   findSourceLineForTextareaOffsets,
   findSourceLineForPreviewScrollTop,
   findTextareaScrollTop,
-  findTextareaScrollTopForSourceLineOffsets
+  findTextareaScrollTopForSourceLineOffsets,
+  type SourceScrollAnchor
 } from "../lib/scrollSync";
 import type { PersistedViewMode } from "../lib/session";
 import {
@@ -14,21 +15,57 @@ import {
   type TextareaLineLayout
 } from "../lib/textareaLayout";
 
-function getLineCount(source: string): number {
-  return source.split("\n").length;
-}
-
 function setScrollTopIfMeaningful(element: HTMLElement, targetScrollTop: number): void {
   if (Math.abs(element.scrollTop - targetScrollTop) > 1) {
     element.scrollTop = targetScrollTop;
   }
 }
 
-export function useScrollSyncController(viewMode: PersistedViewMode) {
+interface AnchorCacheEntry {
+  key: string;
+  anchors: SourceScrollAnchor[];
+}
+
+export function useScrollSyncController(viewMode: PersistedViewMode, renderVersion: number) {
   const previewScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isSyncingRef = useRef(false);
   const textareaLineLayoutRef = useRef<TextareaLineLayout | null>(null);
+  const anchorCacheRef = useRef<AnchorCacheEntry | null>(null);
+  const anchorsInvalidRef = useRef(false);
+
+  // Anchor positions depend on layout, not just HTML: images load after the
+  // preview is written and shift heading offsets, and resizes/font loads do
+  // too. Invalidate on all of them; the next scroll frame rebuilds.
+  useEffect(() => {
+    const container = previewScrollRef.current;
+    if (!container) return;
+
+    const invalidate = () => {
+      anchorsInvalidRef.current = true;
+    };
+    container.addEventListener("load", invalidate, true);
+    window.addEventListener("resize", invalidate);
+    document.fonts?.ready.then(invalidate).catch(() => {});
+    return () => {
+      container.removeEventListener("load", invalidate, true);
+      window.removeEventListener("resize", invalidate);
+    };
+  }, []);
+
+  const getSortedAnchors = useCallback((preview: HTMLDivElement): SourceScrollAnchor[] => {
+    const key = `${renderVersion}:${preview.clientWidth}`;
+    const cached = anchorCacheRef.current;
+    if (!anchorsInvalidRef.current && cached && cached.key === key) {
+      return cached.anchors;
+    }
+
+    const anchors = collectSourceAnchors(preview);
+    anchors.sort((a, b) => a.line - b.line || a.scrollTop - b.scrollTop);
+    anchorCacheRef.current = { key, anchors };
+    anchorsInvalidRef.current = false;
+    return anchors;
+  }, [renderVersion]);
 
   const scrollToHeading = useCallback((headingId: string) => {
     const container = previewScrollRef.current;
@@ -70,13 +107,11 @@ export function useScrollSyncController(viewMode: PersistedViewMode) {
       }
 
       const previewMax = Math.max(0, preview.scrollHeight - preview.clientHeight);
-      const sourceLine = findSourceLineForTextareaOffsets(
-        textarea.scrollTop,
-        getTextareaLineOffsets(textarea, textareaLineLayoutRef)
-      );
+      const offsets = getTextareaLineOffsets(textarea, textareaLineLayoutRef);
+      const sourceLine = findSourceLineForTextareaOffsets(textarea.scrollTop, offsets);
       const anchoredScrollTop = findPreviewScrollTopForSourceLine(
         sourceLine,
-        collectSourceAnchors(preview),
+        getSortedAnchors(preview),
         previewMax
       );
       const targetScroll = anchoredScrollTop ?? findPreviewScrollTop(
@@ -89,7 +124,7 @@ export function useScrollSyncController(viewMode: PersistedViewMode) {
       setScrollTopIfMeaningful(preview, targetScroll);
       releaseScrollSyncLock();
     });
-  }, [releaseScrollSyncLock, viewMode]);
+  }, [getSortedAnchors, releaseScrollSyncLock, viewMode]);
 
   const handlePreviewScroll = useCallback(() => {
     if (isSyncingRef.current || viewMode !== "split") return;
@@ -104,16 +139,19 @@ export function useScrollSyncController(viewMode: PersistedViewMode) {
       }
 
       const textareaMax = Math.max(0, textarea.scrollHeight - textarea.clientHeight);
+      const offsets = getTextareaLineOffsets(textarea, textareaLineLayoutRef);
+      // The mirror measurement holds one entry per source line.
+      const maxSourceLine = Math.max(0, offsets.length - 1);
       const sourceLine = findSourceLineForPreviewScrollTop(
         preview.scrollTop,
-        collectSourceAnchors(preview),
-        Math.max(0, getLineCount(textarea.value) - 1)
+        getSortedAnchors(preview),
+        maxSourceLine
       );
       const anchoredScrollTop = sourceLine === null
         ? null
         : findTextareaScrollTopForSourceLineOffsets(
           sourceLine,
-          getTextareaLineOffsets(textarea, textareaLineLayoutRef),
+          offsets,
           textareaMax
         );
       const targetScroll = anchoredScrollTop ?? findTextareaScrollTop(
@@ -126,7 +164,7 @@ export function useScrollSyncController(viewMode: PersistedViewMode) {
       setScrollTopIfMeaningful(textarea, targetScroll);
       releaseScrollSyncLock();
     });
-  }, [releaseScrollSyncLock, viewMode]);
+  }, [getSortedAnchors, releaseScrollSyncLock, viewMode]);
 
   return {
     handlePreviewScroll,
