@@ -20,10 +20,12 @@ interface UseDocumentCommandsOptions {
   activeDocument: MarkdownDocument;
   api: PlainMarkApi;
   isDark: boolean;
+  migrateDocumentPositionKey(previousKey: string, nextKey: string): void;
   recentInputRef: RefObject<HTMLInputElement | null>;
   rememberRecentPaths(paths: string[]): void;
   removeRecentPath(path: string): void;
   rendered: string;
+  saveCurrentPositionImmediately(): void;
   setRecentOpen: Dispatch<SetStateAction<boolean>>;
   setRecentSearch(query: string): void;
   setStatus: Dispatch<SetStateAction<string>>;
@@ -35,10 +37,12 @@ export function useDocumentCommands({
   activeDocument,
   api,
   isDark,
+  migrateDocumentPositionKey,
   recentInputRef,
   rememberRecentPaths,
   removeRecentPath,
   rendered,
+  saveCurrentPositionImmediately,
   setRecentOpen,
   setRecentSearch,
   setStatus,
@@ -58,6 +62,7 @@ export function useDocumentCommands({
 
   const saveDocument = useCallback(async () => {
     const documentId = activeDocument.id;
+    saveCurrentPositionImmediately();
     const file = await api.saveMarkdown({
       path: activeDocument.path,
       content: activeDocument.content
@@ -67,13 +72,15 @@ export function useDocumentCommands({
       return;
     }
 
+    migrateDocumentPositionKey(documentId, file.path);
     setWorkspace((current) => markDocumentSaved(current, documentId, file.path, file.content));
     rememberRecentPaths([file.path]);
     setStatus(`Saved ${file.path}`);
-  }, [activeDocument.content, activeDocument.id, activeDocument.path, api, rememberRecentPaths, setStatus, setWorkspace]);
+  }, [activeDocument.content, activeDocument.id, activeDocument.path, api, migrateDocumentPositionKey, rememberRecentPaths, saveCurrentPositionImmediately, setStatus, setWorkspace]);
 
   const saveDocumentAs = useCallback(async () => {
     const documentId = activeDocument.id;
+    saveCurrentPositionImmediately();
     const file = await api.saveMarkdownAs({
       path: activeDocument.path,
       content: activeDocument.content
@@ -83,10 +90,11 @@ export function useDocumentCommands({
       return;
     }
 
+    migrateDocumentPositionKey(documentId, file.path);
     setWorkspace((current) => markDocumentSaved(current, documentId, file.path, file.content));
     rememberRecentPaths([file.path]);
     setStatus(`Saved as ${file.path}`);
-  }, [activeDocument.content, activeDocument.id, activeDocument.path, api, rememberRecentPaths, setStatus, setWorkspace]);
+  }, [activeDocument.content, activeDocument.id, activeDocument.path, api, migrateDocumentPositionKey, rememberRecentPaths, saveCurrentPositionImmediately, setStatus, setWorkspace]);
 
   const exportDocument = useCallback(async (format: ExportFormat) => {
     const html = buildExportHtml({

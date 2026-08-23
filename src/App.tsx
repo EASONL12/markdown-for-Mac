@@ -23,6 +23,7 @@ import {
   updateActiveContent
 } from "./lib/documentModel";
 import { extractOutline, renderMarkdown } from "./lib/markdown";
+import { ensureReadingPositionViewMode, getDocumentPositionKey } from "./lib/readingPosition";
 import { createDefaultReadingSettings, sanitizeReadingSettings } from "./lib/readingSettings";
 import type { PersistedThemeMode, PersistedViewMode } from "./lib/session";
 import { getPlainMarkApi } from "./platform/plainmarkApi";
@@ -37,7 +38,9 @@ export default function App() {
   const restoredSession = useRestoredSession();
   const initialReadingSettings = restoredSession?.readingSettings ?? createDefaultReadingSettings();
   const [workspace, setWorkspace] = useState(() => restoredSession?.workspace ?? createInitialWorkspace());
-  const [viewMode, setViewMode] = useState<ViewMode>(() => initialReadingSettings.defaultViewMode);
+  const [viewMode, setViewMode] = useState<ViewMode>(
+    () => restoredSession?.viewMode ?? initialReadingSettings.defaultViewMode
+  );
   const [status, setStatus] = useState("Ready");
   const [version, setVersion] = useState("");
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => restoredSession?.themeMode ?? "system");
@@ -45,7 +48,15 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null);
   const [readingSettings, setReadingSettings] = useState(() => initialReadingSettings);
-  const [readingPositions, setReadingPositions] = useState(() => restoredSession?.readingPositions ?? {});
+  const [readingPositions, setReadingPositions] = useState(() => {
+    if (!restoredSession) return {};
+    const restoredActiveDocument = getActiveDocument(restoredSession.workspace);
+    return ensureReadingPositionViewMode(
+      restoredSession.readingPositions,
+      getDocumentPositionKey(restoredActiveDocument),
+      restoredSession.viewMode
+    );
+  });
   const [systemPrefersDark, setSystemPrefersDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches
   );
@@ -109,22 +120,12 @@ export default function App() {
     viewMode
   });
 
-  const documentCommands = useDocumentCommands({
-    activeDocument,
-    api,
-    isDark,
-    recentInputRef,
-    rememberRecentPaths,
-    removeRecentPath,
-    rendered,
-    setRecentOpen,
-    setRecentSearch,
-    setStatus,
-    setWorkspace,
-    workspace
-  });
-
-  const { changeViewMode, saveCurrentPosition } = useReadingPositionMemory({
+  const {
+    changeViewMode,
+    migrateDocumentPositionKey,
+    saveCurrentPosition,
+    saveCurrentPositionImmediately
+  } = useReadingPositionMemory({
     activeDocument,
     defaultViewMode: readingSettings.defaultViewMode,
     previewScrollRef,
@@ -133,6 +134,23 @@ export default function App() {
     setViewMode,
     textareaRef,
     viewMode
+  });
+
+  const documentCommands = useDocumentCommands({
+    activeDocument,
+    api,
+    isDark,
+    migrateDocumentPositionKey,
+    recentInputRef,
+    rememberRecentPaths,
+    removeRecentPath,
+    rendered,
+    saveCurrentPositionImmediately,
+    setRecentOpen,
+    setRecentSearch,
+    setStatus,
+    setWorkspace,
+    workspace
   });
 
   const openLocalMarkdown = useCallback(async (path: string, anchor: string | null) => {

@@ -6,6 +6,7 @@ import {
   getDefaultExportPath,
   shouldAutoSaveDocument
 } from "./exportDocument";
+import { renderMarkdown } from "./markdown";
 
 describe("exportDocument", () => {
   it("builds a standalone HTML document from rendered Markdown", () => {
@@ -31,6 +32,17 @@ describe("exportDocument", () => {
 
     expect(html).toContain("<title>A &amp; B</title>");
     expect(html).toContain("data-theme=\"dark\"");
+  });
+
+  it("removes preview-only copy buttons from exported code blocks", () => {
+    const html = buildExportHtml({
+      bodyHtml: renderMarkdown("```ts\nconst answer = 42;\n```"),
+      sourcePath: "/tmp/code.md",
+      theme: "light"
+    });
+
+    expect(html).not.toContain("code-copy-btn");
+    expect(html).toContain('<pre class="hljs code-block"><code class="language-ts">');
   });
 
   it("derives default export paths from source paths", () => {

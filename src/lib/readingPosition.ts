@@ -26,6 +26,48 @@ export function getDocumentViewMode(
   return positions[key]?.viewMode ?? defaultViewMode;
 }
 
+export function ensureReadingPositionViewMode(
+  positions: ReadingPositions,
+  key: string,
+  viewMode: PersistedViewMode
+): ReadingPositions {
+  if (positions[key]) {
+    return positions;
+  }
+
+  return {
+    ...positions,
+    [key]: {
+      cursorEnd: 0,
+      cursorStart: 0,
+      previewScrollTop: 0,
+      textareaScrollTop: 0,
+      viewMode
+    }
+  };
+}
+
+export function rekeyReadingPosition(
+  positions: ReadingPositions,
+  previousKey: string,
+  nextKey: string,
+  pendingPosition?: ReadingPosition
+): ReadingPositions {
+  if (previousKey === nextKey) {
+    return positions;
+  }
+
+  const position = pendingPosition ?? positions[previousKey];
+  if (!position) {
+    return positions;
+  }
+
+  const nextPositions = { ...positions };
+  delete nextPositions[previousKey];
+  nextPositions[nextKey] = position;
+  return nextPositions;
+}
+
 function isValidPosition(value: unknown): value is ReadingPosition {
   if (typeof value !== "object" || value === null) {
     return false;

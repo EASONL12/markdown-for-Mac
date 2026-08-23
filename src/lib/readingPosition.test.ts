@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  ensureReadingPositionViewMode,
   getDocumentPositionKey,
   getDocumentViewMode,
   limitReadingPositions,
+  rekeyReadingPosition,
   sanitizeReadingPositions,
   updateReadingPosition
 } from "./readingPosition";
@@ -44,6 +46,34 @@ describe("reading position memory", () => {
 
     expect(getDocumentViewMode(positions, "/docs/readme.md", "read")).toBe("preview");
     expect(getDocumentViewMode(positions, "/docs/new.md", "read")).toBe("read");
+  });
+
+  it("seeds a missing active document with the restored session view mode", () => {
+    const seeded = ensureReadingPositionViewMode({}, "/docs/readme.md", "preview");
+
+    expect(seeded["/docs/readme.md"]).toMatchObject({
+      cursorEnd: 0,
+      cursorStart: 0,
+      previewScrollTop: 0,
+      textareaScrollTop: 0,
+      viewMode: "preview"
+    });
+    expect(ensureReadingPositionViewMode(seeded, "/docs/readme.md", "read")).toBe(seeded);
+  });
+
+  it("moves a saved position to a new path without resetting it", () => {
+    const position = {
+      cursorEnd: 8,
+      cursorStart: 4,
+      previewScrollTop: 120,
+      textareaScrollTop: 40,
+      viewMode: "read" as const
+    };
+
+    const moved = rekeyReadingPosition({ untitled: position }, "untitled", "/docs/readme.md");
+
+    expect(moved.untitled).toBeUndefined();
+    expect(moved["/docs/readme.md"]).toBe(position);
   });
 
   it("drops invalid restored positions", () => {

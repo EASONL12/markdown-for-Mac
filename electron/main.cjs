@@ -74,6 +74,20 @@ function unwatchFile(filePath) {
   watcherRegistry.unwatch(filePath);
 }
 
+function confirmDiscardUnsavedChanges(action) {
+  if (!mainWindow || !hasDirtyDocuments) return true;
+
+  const choice = dialog.showMessageBoxSync(mainWindow, {
+    type: "warning",
+    message: "You have unsaved changes",
+    detail: `Your changes may be lost if you ${action} without saving.`,
+    buttons: [`${action[0].toUpperCase()}${action.slice(1)} Without Saving`, "Cancel"],
+    defaultId: 0,
+    cancelId: 1
+  });
+  return choice === 0;
+}
+
 async function writeMarkdownFile(file, forceDialog = false) {
   let targetPath = forceDialog ? null : file.path;
 
@@ -275,7 +289,14 @@ function createMenu() {
     {
       label: "View",
       submenu: [
-        { role: "reload" },
+        {
+          label: "Reload",
+          accelerator: "CmdOrCtrl+R",
+          click: () => {
+            if (!mainWindow || !confirmDiscardUnsavedChanges("reload")) return;
+            mainWindow.webContents.reload();
+          }
+        },
         { role: "toggleDevTools" },
         { type: "separator" },
         { role: "togglefullscreen" },
@@ -321,15 +342,7 @@ async function createWindow() {
     // Cancel the close and ask before discarding unsaved edits; without this
     // Electron would silently refuse to close the window.
     event.preventDefault();
-    const choice = dialog.showMessageBoxSync(mainWindow, {
-      type: "warning",
-      message: "You have unsaved changes",
-      detail: "Your changes will be lost if you close without saving.",
-      buttons: ["Close Without Saving", "Cancel"],
-      defaultId: 0,
-      cancelId: 1
-    });
-    if (choice === 0) {
+    if (confirmDiscardUnsavedChanges("close")) {
       closeConfirmed = true;
       mainWindow.close();
     }

@@ -163,4 +163,14 @@ describe("findNextMatchAfterReplace", () => {
     expect(result.content).toBe("smith john");
     expect(result.nextIndex).toBe(0);
   });
+
+  it("preserves left context when replacing a lookbehind match", () => {
+    const result = findNextMatchAfterReplace("ab ab", 1, 1, "(?<=a)b", "X", {
+      caseSensitive: true,
+      useRegex: true
+    });
+
+    expect(result.content).toBe("aX ab");
+    expect(result.nextIndex).toBe(0);
+  });
 });

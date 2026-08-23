@@ -87,10 +87,17 @@ export function findNextMatchAfterReplace(
     return { content: originalContent, nextIndex: 0 };
   }
 
-  const tail = originalContent.substring(start);
-  const replacedTail = tail.replace(pattern, prepareReplacement(replacement, options));
-  const replacedLength = Math.max(0, replacedTail.length - (tail.length - matchLength));
-  const content = originalContent.substring(0, start) + replacedTail;
+  // Run against the complete source so lookbehind and other left-context
+  // assertions still see the characters before the selected match.
+  pattern.lastIndex = start;
+  const match = pattern.exec(originalContent);
+  if (!match || match.index !== start || match[0].length !== matchLength) {
+    return { content: originalContent, nextIndex: 0 };
+  }
+
+  pattern.lastIndex = start;
+  const content = originalContent.replace(pattern, prepareReplacement(replacement, options));
+  const replacedLength = Math.max(0, content.length - (originalContent.length - matchLength));
 
   const nextResult = findAll(content, query, options);
   const nextIndex = nextResult.indices.findIndex((index) => index >= start + replacedLength);

@@ -28,6 +28,13 @@ function getBaseName(filePath: string | null): string {
   return baseName.replace(/\.[^.\\/]+$/, "") || "Untitled";
 }
 
+function removePreviewOnlyControls(bodyHtml: string): string {
+  return bodyHtml.replace(
+    /<button class="code-copy-btn" type="button" data-code-copy="[^"]*">Copy<\/button>/g,
+    ""
+  );
+}
+
 export function getDefaultExportPath(sourcePath: string | null, format: ExportFormat): string {
   const extension = `.${format}`;
   if (!sourcePath) {
@@ -61,6 +68,7 @@ export function shouldAutoSaveDocument(
 
 export function buildExportHtml({ bodyHtml, sourcePath, theme }: BuildExportHtmlOptions): string {
   const title = escapeHtml(getBaseName(sourcePath));
+  const exportBodyHtml = removePreviewOnlyControls(bodyHtml);
 
   return `<!doctype html>
 <html lang="en" data-theme="${theme}">
@@ -139,7 +147,7 @@ export function buildExportHtml({ bodyHtml, sourcePath, theme }: BuildExportHtml
 </head>
 <body>
   <main class="markdown-body">
-${bodyHtml}
+${exportBodyHtml}
   </main>
 </body>
 </html>
