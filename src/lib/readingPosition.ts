@@ -7,6 +7,7 @@ export interface ReadingPosition {
   previewScrollTop: number;
   textareaScrollTop: number;
   viewMode: PersistedViewMode;
+  savedAt?: number;
 }
 
 export type ReadingPositions = Record<string, ReadingPosition>;
@@ -25,6 +26,48 @@ export function getDocumentViewMode(
   return positions[key]?.viewMode ?? defaultViewMode;
 }
 
+export function ensureReadingPositionViewMode(
+  positions: ReadingPositions,
+  key: string,
+  viewMode: PersistedViewMode
+): ReadingPositions {
+  if (positions[key]) {
+    return positions;
+  }
+
+  return {
+    ...positions,
+    [key]: {
+      cursorEnd: 0,
+      cursorStart: 0,
+      previewScrollTop: 0,
+      textareaScrollTop: 0,
+      viewMode
+    }
+  };
+}
+
+export function rekeyReadingPosition(
+  positions: ReadingPositions,
+  previousKey: string,
+  nextKey: string,
+  pendingPosition?: ReadingPosition
+): ReadingPositions {
+  if (previousKey === nextKey) {
+    return positions;
+  }
+
+  const position = pendingPosition ?? positions[previousKey];
+  if (!position) {
+    return positions;
+  }
+
+  const nextPositions = { ...positions };
+  delete nextPositions[previousKey];
+  nextPositions[nextKey] = position;
+  return nextPositions;
+}
+
 function isValidPosition(value: unknown): value is ReadingPosition {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -40,7 +83,22 @@ function isValidPosition(value: unknown): value is ReadingPosition {
     record.previewScrollTop >= 0 &&
     typeof record.textareaScrollTop === "number" &&
     record.textareaScrollTop >= 0 &&
-    validViewModes.has(record.viewMode as PersistedViewMode)
+    validViewModes.has(record.viewMode as PersistedViewMode) &&
+    (record.savedAt === undefined || typeof record.savedAt === "number")
+  );
+}
+
+// Keep the newest `max` positions so long-lived sessions cannot grow the
+// persisted blob without bound. Entries without a timestamp sort as oldest.
+export function limitReadingPositions(positions: ReadingPositions, max: number): ReadingPositions {
+  const entries = Object.entries(positions);
+  if (entries.length <= max) {
+    return positions;
+  }
+  return Object.fromEntries(
+    [...entries]
+      .sort(([, a], [, b]) => (a.savedAt ?? 0) - (b.savedAt ?? 0))
+      .slice(-max)
   );
 }
 
@@ -65,6 +123,6 @@ export function updateReadingPosition(
 ): ReadingPositions {
   return {
     ...positions,
-    [key]: position
+    [key]: { ...position, savedAt: Date.now() }
   };
 }

@@ -7,9 +7,39 @@ const path = require("node:path");
 let mainWindow = null;
 let rendererReady = false;
 let pendingExternalPaths = [];
-const fileWatchers = new Map();
+let hasDirtyDocuments = false;
+let closeConfirmed = false;
 const internalWrites = new Map();
 const internalWriteLifetimeMs = 1500;
+
+// One OS watcher per directory, shared by every tracked file inside it.
+const WatcherRegistry = require("./watcherRegistry.cjs");
+const watcherRegistry = new WatcherRegistry({
+  fs: fsSync,
+  path,
+  debounceMs: 50,
+  onTrigger: async (filePath) => {
+    const matchingWrites = (internalWrites.get(filePath) ?? [])
+      .filter((write) => write.expiresAt >= Date.now());
+    if (matchingWrites.length > 0) {
+      internalWrites.set(filePath, matchingWrites);
+      try {
+        const content = await fs.readFile(filePath, "utf8");
+        if (matchingWrites.some((write) => content === write.content)) {
+          return;
+        }
+      } catch {
+        // Let the renderer handle a file that disappeared after saving.
+      }
+    } else {
+      internalWrites.delete(filePath);
+    }
+
+    if (mainWindow && rendererReady) {
+      mainWindow.webContents.send("file:modified", filePath);
+    }
+  }
+});
 
 function isMarkdownPath(filePath) {
   return [".md", ".markdown", ".mdown", ".mkd"].includes(path.extname(filePath).toLowerCase());
@@ -37,64 +67,25 @@ async function openExternalFile(filePath) {
 }
 
 function watchFile(filePath) {
-  if (fileWatchers.has(filePath)) return;
-
-  // Watch the parent directory instead of the file itself: the app writes via
-  // a temp file + rename, which replaces the inode a file watcher is bound to.
-  // A directory watcher keeps working across those atomic saves.
-  try {
-    let notificationTimer = null;
-    const directory = path.dirname(filePath);
-    const basename = path.basename(filePath);
-    const watcher = fsSync.watch(directory, (_event, filename) => {
-      if (filename && filename !== basename) return;
-      if (notificationTimer !== null) {
-        clearTimeout(notificationTimer);
-      }
-      // Give an atomic rename time to settle before comparing the resulting
-      // file with writes initiated by this app.
-      notificationTimer = setTimeout(async () => {
-        notificationTimer = null;
-        const matchingWrites = (internalWrites.get(filePath) ?? [])
-          .filter((write) => write.expiresAt >= Date.now());
-        if (matchingWrites.length > 0) {
-          internalWrites.set(filePath, matchingWrites);
-          try {
-            const content = await fs.readFile(filePath, "utf8");
-            if (matchingWrites.some((write) => content === write.content)) {
-              return;
-            }
-          } catch {
-            // Let the renderer handle a file that disappeared after saving.
-          }
-        } else {
-          internalWrites.delete(filePath);
-        }
-
-        if (mainWindow && rendererReady) {
-          mainWindow.webContents.send("file:modified", filePath);
-        }
-      }, 50);
-    });
-    fileWatchers.set(filePath, {
-      close() {
-        if (notificationTimer !== null) {
-          clearTimeout(notificationTimer);
-        }
-        watcher.close();
-      }
-    });
-  } catch {
-    // Directory may not exist yet, ignore
-  }
+  watcherRegistry.watch(filePath);
 }
 
 function unwatchFile(filePath) {
-  const watcher = fileWatchers.get(filePath);
-  if (watcher) {
-    watcher.close();
-    fileWatchers.delete(filePath);
-  }
+  watcherRegistry.unwatch(filePath);
+}
+
+function confirmDiscardUnsavedChanges(action) {
+  if (!mainWindow || !hasDirtyDocuments) return true;
+
+  const choice = dialog.showMessageBoxSync(mainWindow, {
+    type: "warning",
+    message: "You have unsaved changes",
+    detail: `Your changes may be lost if you ${action} without saving.`,
+    buttons: [`${action[0].toUpperCase()}${action.slice(1)} Without Saving`, "Cancel"],
+    defaultId: 0,
+    cancelId: 1
+  });
+  return choice === 0;
 }
 
 async function writeMarkdownFile(file, forceDialog = false) {
@@ -175,6 +166,14 @@ async function exportPdfFile(file) {
     return null;
   }
 
+  // A data: URL page has an opaque origin and cannot load file:// images, so
+  // stage the HTML in a temp file where local images resolve normally.
+  const tempPath = path.join(
+    app.getPath("temp"),
+    "plainmark-print-" + crypto.randomBytes(8).toString("hex") + ".html"
+  );
+  await fs.writeFile(tempPath, file.html, "utf8");
+
   const pdfWindow = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -185,8 +184,7 @@ async function exportPdfFile(file) {
   });
 
   try {
-    const dataUrl = "data:text/html;charset=utf-8," + encodeURIComponent(file.html);
-    await pdfWindow.loadURL(dataUrl);
+    await pdfWindow.loadFile(tempPath);
     const pdfData = await pdfWindow.webContents.printToPDF({
       printBackground: true,
       pageSize: "A4"
@@ -195,6 +193,7 @@ async function exportPdfFile(file) {
     return targetPath;
   } finally {
     pdfWindow.close();
+    fs.unlink(tempPath).catch(() => {});
   }
 }
 
@@ -290,7 +289,14 @@ function createMenu() {
     {
       label: "View",
       submenu: [
-        { role: "reload" },
+        {
+          label: "Reload",
+          accelerator: "CmdOrCtrl+R",
+          click: () => {
+            if (!mainWindow || !confirmDiscardUnsavedChanges("reload")) return;
+            mainWindow.webContents.reload();
+          }
+        },
         { role: "toggleDevTools" },
         { type: "separator" },
         { role: "togglefullscreen" },
@@ -331,15 +337,31 @@ async function createWindow() {
   }
 
   rendererReady = true;
+  mainWindow.on("close", (event) => {
+    if (closeConfirmed || !hasDirtyDocuments) return;
+    // Cancel the close and ask before discarding unsaved edits; without this
+    // Electron would silently refuse to close the window.
+    event.preventDefault();
+    if (confirmDiscardUnsavedChanges("close")) {
+      closeConfirmed = true;
+      mainWindow.close();
+    }
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
     rendererReady = false;
+    hasDirtyDocuments = false;
+    closeConfirmed = false;
   });
 
   const pathsToOpen = [...pendingExternalPaths];
   pendingExternalPaths = [];
   for (const filePath of pathsToOpen) {
-    await openExternalFile(filePath);
+    try {
+      await openExternalFile(filePath);
+    } catch (error) {
+      dialog.showErrorBox("Could not open Markdown file", error.message);
+    }
   }
 }
 
@@ -385,6 +407,23 @@ ipcMain.handle("markdown:open", async () => {
 
   return Promise.all(result.filePaths.map((filePath) => readMarkdownFile(filePath)));
 });
+
+ipcMain.on("docs:dirty-changed", (_event, hasDirty) => {
+  hasDirtyDocuments = Boolean(hasDirty);
+});
+
+// Chromium does not propagate nativeTheme overrides into the renderer's
+// prefers-color-scheme media query, so push scheme changes over IPC.
+function broadcastNativeTheme() {
+  if (mainWindow && rendererReady) {
+    mainWindow.webContents.send(
+      "theme:native-changed",
+      nativeTheme.shouldUseDarkColors ? "dark" : "light"
+    );
+  }
+}
+
+nativeTheme.on("updated", broadcastNativeTheme);
 
 ipcMain.handle("theme:set", async (_event, mode) => {
   if (mode === "system") {

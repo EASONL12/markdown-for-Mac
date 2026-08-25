@@ -62,16 +62,25 @@ export function useFileConflictController({
     setWorkspace
   ]);
 
+  // Report dirty state to the main process so closing the window can warn
+  // about unsaved edits instead of silently refusing to close.
+  const hasDirtyDocuments = workspace.documents.some((document) => document.isDirty);
   useEffect(() => {
-    const handler = (event: BeforeUnloadEvent) => {
-      if (workspace.documents.some((document) => document.isDirty)) {
-        event.preventDefault();
-        event.returnValue = "";
-      }
+    api.setDirtyState(hasDirtyDocuments);
+  }, [api, hasDirtyDocuments]);
+
+  useEffect(() => {
+    // Electron confirms close/reload in the main process. Browser preview has
+    // no main process, so retain native navigation protection there.
+    if (window.plainmark || !hasDirtyDocuments) return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
     };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [workspace.documents]);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasDirtyDocuments]);
 
   // Register watchers only when the set of open paths changes, not on every keystroke.
   const watchedPathsKey = useMemo(

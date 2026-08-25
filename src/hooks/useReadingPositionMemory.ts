@@ -3,7 +3,9 @@ import type { MarkdownDocument } from "../lib/documentModel";
 import {
   getDocumentPositionKey,
   getDocumentViewMode,
+  rekeyReadingPosition,
   updateReadingPosition,
+  type ReadingPosition,
   type ReadingPositions
 } from "../lib/readingPosition";
 import type { PersistedViewMode } from "../lib/session";
@@ -31,7 +33,7 @@ export function useReadingPositionMemory({
 }: UseReadingPositionMemoryOptions) {
   const activeKey = getDocumentPositionKey(activeDocument);
   const restoredKeyRef = useRef<string | null>(null);
-  const saveTimersRef = useRef(new Map<string, number>());
+  const saveTimersRef = useRef(new Map<string, { position: ReadingPosition; timer: number }>());
 
   const savePosition = useCallback((positionViewMode: PersistedViewMode, immediate = false) => {
     const textarea = textareaRef.current;
@@ -44,9 +46,9 @@ export function useReadingPositionMemory({
       viewMode: positionViewMode
     };
 
-    const existingTimer = saveTimersRef.current.get(activeKey);
-    if (existingTimer !== undefined) {
-      window.clearTimeout(existingTimer);
+    const existingSave = saveTimersRef.current.get(activeKey);
+    if (existingSave) {
+      window.clearTimeout(existingSave.timer);
     }
 
     const persistPosition = () => {
@@ -59,11 +61,18 @@ export function useReadingPositionMemory({
       return;
     }
 
-    saveTimersRef.current.set(activeKey, window.setTimeout(persistPosition, 120));
+    saveTimersRef.current.set(activeKey, {
+      position,
+      timer: window.setTimeout(persistPosition, 120)
+    });
   }, [activeKey, previewScrollRef, setReadingPositions, textareaRef]);
 
   const saveCurrentPosition = useCallback(() => {
     savePosition(viewMode);
+  }, [savePosition, viewMode]);
+
+  const saveCurrentPositionImmediately = useCallback(() => {
+    savePosition(viewMode, true);
   }, [savePosition, viewMode]);
 
   const changeViewMode = useCallback((nextViewMode: PersistedViewMode) => {
@@ -71,10 +80,29 @@ export function useReadingPositionMemory({
     savePosition(nextViewMode, true);
   }, [savePosition, setViewMode]);
 
+  const migrateDocumentPositionKey = useCallback((previousKey: string, nextKey: string) => {
+    if (previousKey === nextKey) return;
+
+    const pendingSave = saveTimersRef.current.get(previousKey);
+    if (pendingSave) {
+      window.clearTimeout(pendingSave.timer);
+      saveTimersRef.current.delete(previousKey);
+    }
+
+    setReadingPositions((current) => rekeyReadingPosition(
+      current,
+      previousKey,
+      nextKey,
+      pendingSave
+        ? { ...pendingSave.position, savedAt: Date.now() }
+        : undefined
+    ));
+  }, [setReadingPositions]);
+
   useEffect(() => {
     return () => {
-      for (const timer of saveTimersRef.current.values()) {
-        window.clearTimeout(timer);
+      for (const save of saveTimersRef.current.values()) {
+        window.clearTimeout(save.timer);
       }
       saveTimersRef.current.clear();
     };
@@ -103,6 +131,8 @@ export function useReadingPositionMemory({
 
   return {
     changeViewMode,
+    migrateDocumentPositionKey,
+    saveCurrentPositionImmediately,
     saveCurrentPosition
   };
 }

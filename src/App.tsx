@@ -23,6 +23,7 @@ import {
   updateActiveContent
 } from "./lib/documentModel";
 import { extractOutline, renderMarkdown } from "./lib/markdown";
+import { ensureReadingPositionViewMode, getDocumentPositionKey } from "./lib/readingPosition";
 import { createDefaultReadingSettings, sanitizeReadingSettings } from "./lib/readingSettings";
 import type { PersistedThemeMode, PersistedViewMode } from "./lib/session";
 import { getPlainMarkApi } from "./platform/plainmarkApi";
@@ -37,7 +38,9 @@ export default function App() {
   const restoredSession = useRestoredSession();
   const initialReadingSettings = restoredSession?.readingSettings ?? createDefaultReadingSettings();
   const [workspace, setWorkspace] = useState(() => restoredSession?.workspace ?? createInitialWorkspace());
-  const [viewMode, setViewMode] = useState<ViewMode>(() => initialReadingSettings.defaultViewMode);
+  const [viewMode, setViewMode] = useState<ViewMode>(
+    () => restoredSession?.viewMode ?? initialReadingSettings.defaultViewMode
+  );
   const [status, setStatus] = useState("Ready");
   const [version, setVersion] = useState("");
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => restoredSession?.themeMode ?? "system");
@@ -45,7 +48,18 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null);
   const [readingSettings, setReadingSettings] = useState(() => initialReadingSettings);
-  const [readingPositions, setReadingPositions] = useState(() => restoredSession?.readingPositions ?? {});
+  const [readingPositions, setReadingPositions] = useState(() => {
+    if (!restoredSession) return {};
+    const restoredActiveDocument = getActiveDocument(restoredSession.workspace);
+    return ensureReadingPositionViewMode(
+      restoredSession.readingPositions,
+      getDocumentPositionKey(restoredActiveDocument),
+      restoredSession.viewMode
+    );
+  });
+  const [systemPrefersDark, setSystemPrefersDark] = useState(
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches
+  );
   const recentInputRef = useRef<HTMLInputElement>(null);
   const {
     filteredRecentFiles,
@@ -65,11 +79,16 @@ export default function App() {
     () => renderMarkdown(activeDocument.content, activeDocument.path),
     [activeDocument.content, activeDocument.path]
   );
+  // Epoch for scroll-sync anchor caching; bumped during render so the version
+  // always matches the preview DOM the renderer is about to commit.
+  const renderVersionRef = useRef(0);
+  const lastRenderedRef = useRef(rendered);
+  if (lastRenderedRef.current !== rendered) {
+    lastRenderedRef.current = rendered;
+    renderVersionRef.current += 1;
+  }
   const outline = useMemo(() => extractOutline(activeDocument.content), [activeDocument.content]);
-  const isDark = useMemo(() => {
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    return themeMode === "dark" || (themeMode === "system" && prefersDark);
-  }, [themeMode]);
+  const isDark = themeMode === "dark" || (themeMode === "system" && systemPrefersDark);
 
   useEffect(() => {
     api.getVersion().then(setVersion);
@@ -87,7 +106,7 @@ export default function App() {
     previewScrollRef,
     scrollToHeading,
     textareaRef
-  } = useScrollSyncController(viewMode);
+  } = useScrollSyncController(viewMode, renderVersionRef.current);
 
   const updateActiveDocumentContent = useCallback((content: string) => {
     setWorkspace((current) => updateActiveContent(current, content));
@@ -101,22 +120,12 @@ export default function App() {
     viewMode
   });
 
-  const documentCommands = useDocumentCommands({
-    activeDocument,
-    api,
-    isDark,
-    recentInputRef,
-    rememberRecentPaths,
-    removeRecentPath,
-    rendered,
-    setRecentOpen,
-    setRecentSearch,
-    setStatus,
-    setWorkspace,
-    workspace
-  });
-
-  const { changeViewMode, saveCurrentPosition } = useReadingPositionMemory({
+  const {
+    changeViewMode,
+    migrateDocumentPositionKey,
+    saveCurrentPosition,
+    saveCurrentPositionImmediately
+  } = useReadingPositionMemory({
     activeDocument,
     defaultViewMode: readingSettings.defaultViewMode,
     previewScrollRef,
@@ -125,6 +134,23 @@ export default function App() {
     setViewMode,
     textareaRef,
     viewMode
+  });
+
+  const documentCommands = useDocumentCommands({
+    activeDocument,
+    api,
+    isDark,
+    migrateDocumentPositionKey,
+    recentInputRef,
+    rememberRecentPaths,
+    removeRecentPath,
+    rendered,
+    saveCurrentPositionImmediately,
+    setRecentOpen,
+    setRecentSearch,
+    setStatus,
+    setWorkspace,
+    workspace
   });
 
   const openLocalMarkdown = useCallback(async (path: string, anchor: string | null) => {
@@ -158,25 +184,30 @@ export default function App() {
   });
 
   useEffect(() => {
-    const root = document.documentElement;
+    let active = true;
+    // Electron does not propagate nativeTheme overrides into the renderer's
+    // prefers-color-scheme media query, so take scheme updates over IPC.
+    api.getTheme().then((scheme) => {
+      if (active) setSystemPrefersDark(scheme === "dark");
+    });
+    const remove = api.onNativeThemeChanged((scheme) => setSystemPrefersDark(scheme === "dark"));
+    return () => {
+      active = false;
+      remove();
+    };
+  }, [api]);
 
-    function applyTheme() {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      const dark = themeMode === "dark" || (themeMode === "system" && prefersDark);
-      root.classList.toggle("dark", dark);
-      root.classList.toggle("light", !dark);
-    }
-
-    applyTheme();
+  // Only re-assert the mode on explicit mode changes; asserting on scheme
+  // updates would clobber external overrides and snap back to the saved mode.
+  useEffect(() => {
     api.setTheme(themeMode);
+  }, [api, themeMode]);
 
-    if (themeMode === "system") {
-      const mq = window.matchMedia("(prefers-color-scheme: dark)");
-      const handler = () => applyTheme();
-      mq.addEventListener("change", handler);
-      return () => mq.removeEventListener("change", handler);
-    }
-  }, [themeMode, api]);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", isDark);
+    root.classList.toggle("light", !isDark);
+  }, [isDark]);
 
   useEffect(() => {
     const removeToggle = api.onMenuToggleDark(() => {
