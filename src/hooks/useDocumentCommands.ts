@@ -61,6 +61,10 @@ export function useDocumentCommands({
   }, [api, rememberRecentPaths, setStatus, setWorkspace]);
 
   const saveDocument = useCallback(async () => {
+    if (activeDocument.diskState) {
+      setStatus("Resolve the disk change before saving this file");
+      return;
+    }
     const documentId = activeDocument.id;
     saveCurrentPositionImmediately();
     const file = await api.saveMarkdown({
@@ -76,14 +80,18 @@ export function useDocumentCommands({
     setWorkspace((current) => markDocumentSaved(current, documentId, file.path, file.content));
     rememberRecentPaths([file.path]);
     setStatus(`Saved ${file.path}`);
-  }, [activeDocument.content, activeDocument.id, activeDocument.path, api, migrateDocumentPositionKey, rememberRecentPaths, saveCurrentPositionImmediately, setStatus, setWorkspace]);
+  }, [activeDocument.content, activeDocument.diskState, activeDocument.id, activeDocument.path, api, migrateDocumentPositionKey, rememberRecentPaths, saveCurrentPositionImmediately, setStatus, setWorkspace]);
 
   const saveDocumentAs = useCallback(async () => {
     const documentId = activeDocument.id;
     saveCurrentPositionImmediately();
     const file = await api.saveMarkdownAs({
       path: activeDocument.path,
-      content: activeDocument.content
+      content: activeDocument.content,
+      excludedPaths: activeDocument.diskState && activeDocument.path ? [activeDocument.path] : []
+    }).catch(() => {
+      setStatus("Could not save a copy; choose a different writable path");
+      return null;
     });
 
     if (!file) {
@@ -94,7 +102,7 @@ export function useDocumentCommands({
     setWorkspace((current) => markDocumentSaved(current, documentId, file.path, file.content));
     rememberRecentPaths([file.path]);
     setStatus(`Saved as ${file.path}`);
-  }, [activeDocument.content, activeDocument.id, activeDocument.path, api, migrateDocumentPositionKey, rememberRecentPaths, saveCurrentPositionImmediately, setStatus, setWorkspace]);
+  }, [activeDocument.content, activeDocument.diskState, activeDocument.id, activeDocument.path, api, migrateDocumentPositionKey, rememberRecentPaths, saveCurrentPositionImmediately, setStatus, setWorkspace]);
 
   const exportDocument = useCallback(async (format: ExportFormat) => {
     const html = buildExportHtml({

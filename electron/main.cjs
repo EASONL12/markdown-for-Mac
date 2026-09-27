@@ -46,8 +46,20 @@ function isMarkdownPath(filePath) {
 }
 
 async function readMarkdownFile(filePath) {
-  const content = await fs.readFile(filePath, "utf8");
-  return { path: filePath, content };
+  const canonicalPath = await fs.realpath(filePath);
+  const content = await fs.readFile(canonicalPath, "utf8");
+  return { path: canonicalPath, content };
+}
+
+async function canonicalSavePath(filePath) {
+  try {
+    return await fs.realpath(filePath);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    // New files still need the canonical parent (/tmp and /private/tmp on
+    // macOS are the same directory). Existing symlinks resolve above.
+    return path.join(await fs.realpath(path.dirname(filePath)), path.basename(filePath));
+  }
 }
 
 async function openExternalFile(filePath) {
@@ -103,6 +115,12 @@ async function writeMarkdownFile(file, forceDialog = false) {
     }
 
     targetPath = result.filePath;
+  }
+
+  targetPath = await canonicalSavePath(targetPath);
+  const excludedPaths = await Promise.all((file.excludedPaths ?? []).map(canonicalSavePath));
+  if (excludedPaths.includes(targetPath)) {
+    throw new Error("Choose a different path to preserve the open document.");
   }
 
   const tmpPath = targetPath + "." + crypto.randomBytes(8).toString("hex") + ".tmp";
@@ -464,7 +482,9 @@ ipcMain.handle("file:unwatch", (_event, filePath) => {
 });
 
 ipcMain.handle("markdown:read", async (_event, filePath) => {
-  return readMarkdownFile(filePath);
+  // A refresh must retain the requesting tab's identity, including paths
+  // from older sessions. New opens and saves use canonical identities.
+  return { ...(await readMarkdownFile(filePath)), path: filePath };
 });
 
 ipcMain.handle("app:version", () => {

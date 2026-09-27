@@ -3,6 +3,7 @@ import type { OpenedMarkdownFile } from "./document";
 export interface SaveMarkdownFile {
   path: string | null;
   content: string;
+  excludedPaths?: string[];
 }
 
 export interface ExportDocumentFile {

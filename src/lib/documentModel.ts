@@ -5,6 +5,8 @@ export interface MarkdownDocument {
   path: string | null;
   content: string;
   isDirty: boolean;
+  diskState?: "checking" | "conflict";
+  recoveredFrom?: string;
 }
 
 export interface MarkdownWorkspace {
@@ -64,7 +66,9 @@ export function markSaved(document: MarkdownDocument, path: string): MarkdownDoc
 }
 
 export function getDisplayName(document: MarkdownDocument): string {
-  const baseName = document.path ? document.path.split(/[\\/]/).pop() || "Untitled.md" : "Untitled.md";
+  const sourcePath = document.path ?? document.recoveredFrom;
+  const name = sourcePath ? sourcePath.split(/[\\/]/).pop() || "Untitled.md" : "Untitled.md";
+  const baseName = document.recoveredFrom && !document.path ? `${name} (recovered)` : name;
   return document.isDirty ? `${baseName} *` : baseName;
 }
 
@@ -141,15 +145,31 @@ export function markDocumentSaved(
     ...document,
     id: path,
     path,
-    isDirty: document.content !== savedContent
+    isDirty: document.content !== savedContent || (document.path === path && Boolean(document.diskState)),
+    diskState: document.path === path ? document.diskState : undefined,
+    recoveredFrom: undefined
   };
+  const target = workspace.documents.find((doc) => doc.id !== documentId && doc.path === path);
+  let recoveredId = `recovered:${path}`;
+  while (workspace.documents.some((doc) => doc.id === recoveredId)) {
+    recoveredId += ":copy";
+  }
   const nextDocuments = workspace.documents
-    .filter((doc) => doc.id === documentId || doc.path !== path)
-    .map((doc) => (doc.id === documentId ? savedDocument : doc));
+    .filter((doc) => doc.id === documentId || doc.path !== path || doc.isDirty)
+    .map((doc) => {
+      if (doc.id === documentId) return savedDocument;
+      if (doc.path !== path) return doc;
+      // A disk overwrite must never discard another tab's in-memory edits.
+      return { ...doc, id: recoveredId, path: null, recoveredFrom: path, diskState: undefined };
+    });
 
   return {
     documents: nextDocuments,
-    activeDocumentId: workspace.activeDocumentId === documentId ? savedDocument.id : workspace.activeDocumentId
+    activeDocumentId: workspace.activeDocumentId === documentId
+      ? savedDocument.id
+      : workspace.activeDocumentId === target?.id
+        ? target.isDirty ? recoveredId : savedDocument.id
+        : workspace.activeDocumentId
   };
 }
 

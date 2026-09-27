@@ -148,3 +148,46 @@ describe("documentModel", () => {
     expect(getActiveDocument(saved).isDirty).toBe(true);
   });
 });
+
+describe("save-as draft protection", () => {
+  function twoDocuments() {
+    return {
+      activeDocumentId: "/a.md",
+      documents: [
+        { id: "/a.md", path: "/a.md", content: "A", isDirty: true },
+        { id: "/b.md", path: "/b.md", content: "unsaved B", isDirty: true }
+      ]
+    };
+  }
+
+  it("retains a dirty destination tab as an unsaved recovery draft", () => {
+    const saved = markDocumentSaved(twoDocuments(), "/a.md", "/b.md", "A");
+    expect(saved.documents).toHaveLength(2);
+    expect(getActiveDocument(saved)).toMatchObject({ path: "/b.md", content: "A", isDirty: false });
+    const recovered = saved.documents.find((doc) => doc.path === null)!;
+    expect(recovered).toMatchObject({ content: "unsaved B", isDirty: true, recoveredFrom: "/b.md", diskState: undefined });
+    expect(getDisplayName(recovered)).toBe("b.md (recovered) *");
+    expect(new Set(saved.documents.map((doc) => doc.id)).size).toBe(2);
+  });
+
+  it("keeps focus on destination edits made while the save dialog was open", () => {
+    const state = { ...twoDocuments(), activeDocumentId: "/b.md" };
+    const saved = markDocumentSaved(state, "/a.md", "/b.md", "A");
+    expect(getActiveDocument(saved)).toMatchObject({ path: null, content: "unsaved B", isDirty: true });
+  });
+
+  it("does not leave a dangling selection when merging a clean destination tab", () => {
+    const state = { ...twoDocuments(), activeDocumentId: "/b.md" };
+    state.documents[1].isDirty = false;
+    const saved = markDocumentSaved(state, "/a.md", "/b.md", "A");
+    expect(saved.documents.some((doc) => doc.id === saved.activeDocumentId)).toBe(true);
+    expect(getActiveDocument(saved).content).toBe("A");
+  });
+
+  it("does not unlock a new conflict when an earlier save completes", () => {
+    const state = twoDocuments();
+    const conflicting = { ...state, documents: state.documents.map((doc) => ({ ...doc, diskState: "conflict" as const })) };
+    const saved = markDocumentSaved(conflicting, "/a.md", "/a.md", "A");
+    expect(getActiveDocument(saved)).toMatchObject({ isDirty: true, diskState: "conflict" });
+  });
+});

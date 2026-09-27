@@ -1,19 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { markDocumentSaved, type MarkdownWorkspace } from "../lib/documentModel";
-import {
-  getConflictCopyPath,
-  shouldAutoSaveDocument,
-  type ConflictAction
-} from "../lib/exportDocument";
+import { markDocumentSaved, type MarkdownDocument, type MarkdownWorkspace } from "../lib/documentModel";
+import type { ConflictAction } from "../lib/exportDocument";
+import { flagExternalChange, reconcileDiskRead, resolveLocalConflict, resolveDiskConflict } from "../lib/fileReconciliation";
 import type { PlainMarkApi } from "../shared/types/plainmarkApi";
 
 interface UseFileConflictControllerOptions {
-  activeDocument: {
-    id: string;
-    content: string;
-    isDirty: boolean;
-    path: string | null;
-  };
+  activeDocument: MarkdownDocument;
   api: PlainMarkApi;
   autoSaveEnabled: boolean;
   rememberRecentPaths(paths: string[]): void;
@@ -31,21 +23,29 @@ export function useFileConflictController({
   setWorkspace,
   workspace
 }: UseFileConflictControllerOptions) {
-  const [pendingConflictPath, setPendingConflictPath] = useState<string | null>(null);
+  const pendingConflictPath = workspace.documents.find((document) => document.diskState === "conflict")?.path ?? null;
+  const [conflictBusy, setConflictBusy] = useState(false);
+  const conflictBusyRef = useRef(false);
   const documentsRef = useRef(workspace.documents);
   documentsRef.current = workspace.documents;
 
   useEffect(() => {
     const path = activeDocument.path;
     if (!autoSaveEnabled) return;
-    if (!shouldAutoSaveDocument(path, activeDocument.isDirty, pendingConflictPath)) return;
+    if (!path || !activeDocument.isDirty || activeDocument.diskState) return;
 
     const documentId = activeDocument.id;
     const timer = setTimeout(async () => {
-      const result = await api.saveMarkdown({ path, content: activeDocument.content });
-      if (result) {
-        setWorkspace((current) => markDocumentSaved(current, documentId, result.path, result.content));
-        setStatus("Auto-saved");
+      const current = documentsRef.current.find((document) => document.id === documentId);
+      if (!current || current.diskState || current.content !== activeDocument.content) return;
+      try {
+        const result = await api.saveMarkdown({ path, content: activeDocument.content });
+        if (result) {
+          setWorkspace((workspaceState) => markDocumentSaved(workspaceState, documentId, result.path, result.content));
+          setStatus("Auto-saved");
+        }
+      } catch {
+        setStatus(`Could not save ${path}`);
       }
     }, 1500);
 
@@ -57,7 +57,7 @@ export function useFileConflictController({
     activeDocument.isDirty,
     api,
     autoSaveEnabled,
-    pendingConflictPath,
+    activeDocument.diskState,
     setStatus,
     setWorkspace
   ]);
@@ -104,68 +104,63 @@ export function useFileConflictController({
     };
   }, [api, watchedPathsKey]);
 
-  const reloadDocumentFromDisk = useCallback(async (filePath: string) => {
-    const file = await api.readFile(filePath);
-    if (!file) return;
-
-    const current = documentsRef.current.find((document) => document.path === filePath);
-    if (!current || current.content === file.content) {
-      return;
+  useEffect(() => {
+    let canceled = false;
+    for (const document of workspace.documents) {
+      if (!document.path || document.diskState !== "checking") continue;
+      const expected = document;
+      api.readFile(document.path)
+        .catch(() => null)
+        .then((file) => {
+          if (canceled) return;
+          setWorkspace((current) => reconcileDiskRead(current, expected, file));
+          if (!file) setStatus(`Could not read ${expected.path}; local contents preserved`);
+        });
     }
-
-    setWorkspace((workspaceState) => {
-      const updated = workspaceState.documents.map((document) =>
-        document.path === filePath ? { ...document, content: file.content, isDirty: false } : document
-      );
-      return { ...workspaceState, documents: updated };
-    });
-    setStatus(`Reloaded ${filePath}`);
-  }, [api, setStatus, setWorkspace]);
+    // Ignore reads from a previous workspace render, including StrictMode's
+    // first mount. The next effect checks the latest document snapshot.
+    return () => { canceled = true; };
+  }, [api, setStatus, setWorkspace, workspace.documents]);
 
   useEffect(() => {
-    const removeFileModified = api.onFileModified(async (filePath: string) => {
-      const doc = documentsRef.current.find((document) => document.path === filePath);
-      if (!doc) return;
-
-      if (doc.isDirty) {
-        setPendingConflictPath(filePath);
-        return;
-      }
-
-      await reloadDocumentFromDisk(filePath);
+    return api.onFileModified((filePath: string) => {
+      setWorkspace((current) => flagExternalChange(current, filePath));
     });
-
-    return () => { removeFileModified(); };
-  }, [api, reloadDocumentFromDisk]);
+  }, [api, setWorkspace]);
 
   const handleConflictAction = useCallback(async (action: ConflictAction) => {
-    if (!pendingConflictPath) return;
+    if (!pendingConflictPath || conflictBusyRef.current) return;
+    const doc = documentsRef.current.find((document) => document.path === pendingConflictPath);
+    if (!doc) return;
 
-    const filePath = pendingConflictPath;
-    const doc = documentsRef.current.find((document) => document.path === filePath);
-    setPendingConflictPath(null);
-
-    if (action === "keep-local" || action === "dismiss" || !doc) {
+    if (action === "keep-local" || action === "dismiss") {
+      setWorkspace((current) => resolveLocalConflict(current, doc));
       setStatus(action === "keep-local" ? "Kept local edits" : "Dismissed external change");
       return;
     }
 
-    if (action === "save-copy") {
-      const savedCopy = await api.saveMarkdownAs({
-        path: getConflictCopyPath(filePath),
-        content: doc.content
+    conflictBusyRef.current = true;
+    setConflictBusy(true);
+    try {
+      const outcome = await resolveDiskConflict({
+        document: doc,
+        action,
+        api,
+        updateWorkspace: setWorkspace,
+        rememberRecentPaths,
+        protectedPaths: documentsRef.current.flatMap((document) => document.path ? [document.path] : [])
       });
-      if (!savedCopy) {
-        setStatus("Save copy canceled");
-        return;
-      }
-      rememberRecentPaths([savedCopy.path]);
+      setStatus(outcome === "canceled" ? "Save copy canceled; conflict still pending" : "Disk version checked");
+    } catch {
+      setStatus(`Could not resolve ${pendingConflictPath}; local contents preserved`);
+    } finally {
+      conflictBusyRef.current = false;
+      setConflictBusy(false);
     }
-
-    await reloadDocumentFromDisk(filePath);
-  }, [api, pendingConflictPath, reloadDocumentFromDisk, rememberRecentPaths, setStatus]);
+  }, [api, pendingConflictPath, rememberRecentPaths, setStatus, setWorkspace]);
 
   return {
+    conflictBusy,
     handleConflictAction,
     pendingConflictPath
   };

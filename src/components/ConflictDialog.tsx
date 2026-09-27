@@ -2,11 +2,12 @@ import { buildConflictChoices, type ConflictAction } from "../lib/exportDocument
 
 interface ConflictDialogProps {
   filePath: string;
+  busy?: boolean;
   isDirty: boolean;
   onAction: (action: ConflictAction) => void;
 }
 
-export function ConflictDialog({ filePath, isDirty, onAction }: ConflictDialogProps) {
+export function ConflictDialog({ filePath, isDirty, busy = false, onAction }: ConflictDialogProps) {
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="conflict-dialog" role="dialog" aria-modal="true" aria-label="External file change">
@@ -20,6 +21,7 @@ export function ConflictDialog({ filePath, isDirty, onAction }: ConflictDialogPr
         <div className="conflict-actions">
           {buildConflictChoices(isDirty).map((choice) => (
             <button
+              disabled={busy}
               key={choice.action}
               type="button"
               className={choice.action === "reload" ? "primary" : ""}

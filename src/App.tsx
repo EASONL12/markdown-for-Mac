@@ -22,6 +22,7 @@ import {
   getDisplayName,
   updateActiveContent
 } from "./lib/documentModel";
+import { prepareRestoredWorkspace } from "./lib/fileReconciliation";
 import { extractOutline, renderMarkdown } from "./lib/markdown";
 import { ensureReadingPositionViewMode, getDocumentPositionKey } from "./lib/readingPosition";
 import { createDefaultReadingSettings, sanitizeReadingSettings } from "./lib/readingSettings";
@@ -37,7 +38,10 @@ type ThemeMode = PersistedThemeMode;
 export default function App() {
   const restoredSession = useRestoredSession();
   const initialReadingSettings = restoredSession?.readingSettings ?? createDefaultReadingSettings();
-  const [workspace, setWorkspace] = useState(() => restoredSession?.workspace ?? createInitialWorkspace());
+  const [workspace, setWorkspace] = useState(() => {
+    if (!restoredSession) return createInitialWorkspace();
+    return window.plainmark ? prepareRestoredWorkspace(restoredSession.workspace) : restoredSession.workspace;
+  });
   const [viewMode, setViewMode] = useState<ViewMode>(
     () => restoredSession?.viewMode ?? initialReadingSettings.defaultViewMode
   );
@@ -216,7 +220,7 @@ export default function App() {
     return () => { removeToggle(); };
   }, [api]);
 
-  const { handleConflictAction, pendingConflictPath } = useFileConflictController({
+  const { conflictBusy, handleConflictAction, pendingConflictPath } = useFileConflictController({
     activeDocument,
     api,
     autoSaveEnabled: readingSettings.autoSave,
@@ -391,6 +395,7 @@ export default function App() {
 
       {pendingConflictPath && (
         <ConflictDialog
+          busy={conflictBusy}
           filePath={pendingConflictPath}
           isDirty={workspace.documents.some((document) => document.path === pendingConflictPath && document.isDirty)}
           onAction={handleConflictAction}
